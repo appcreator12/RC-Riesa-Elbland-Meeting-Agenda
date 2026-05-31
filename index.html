@@ -440,6 +440,10 @@ body:not(.edit-mode) .attachments:empty { display: none; }
 .cs-card-inner::-webkit-scrollbar-track { background: transparent; }
 .cs-card-inner::-webkit-scrollbar-thumb { background: var(--light); border-radius: 2px; }
 </style>
+<!-- Firebase SDKs (compat = no bundler needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-storage-compat.js"></script>
 </head>
 <body>
 
@@ -461,6 +465,10 @@ body:not(.edit-mode) .attachments:empty { display: none; }
   <button class="tb-btn" onclick="exportData()" title="Export">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
   </button>
+  <div class="tb-btn" id="sync-status" style="pointer-events:none;gap:6px">
+    <span id="sync-dot" style="width:7px;height:7px;border-radius:50%;background:#aaa;flex-shrink:0;transition:background .3s"></span>
+    <span id="sync-label">Verbinde…</span>
+  </div>
 </div>
 
 <!-- Navigation -->
@@ -478,23 +486,31 @@ body:not(.edit-mode) .attachments:empty { display: none; }
 <div id="slides"></div>
 
 <script>
-// ── CONFIG ──────────────────────────────────────────────────
+// ── FIREBASE INIT ────────────────────────────────────────────
+firebase.initializeApp({
+  apiKey:            "AIzaSyA0hlqhLDT-fWNoNfjH5kq4mnfiNn66NbQ",
+  authDomain:        "rc-riesa-elbland-meetingagenda.firebaseapp.com",
+  databaseURL:       "https://rc-riesa-elbland-meetingagenda-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId:         "rc-riesa-elbland-meetingagenda",
+  storageBucket:     "rc-riesa-elbland-meetingagenda.firebasestorage.app",
+  messagingSenderId: "710053358",
+  appId:             "1:710053358:web:7ca20c48de38a3237692ff"
+});
+const db      = firebase.database();
+const storage = firebase.storage();
+const DB_PATH = 'meetings/current';
+
+// ── AGENDA CONFIG ────────────────────────────────────────────
 const AGENDA = [
-  { id:"begruess",  num:"01", title:"Begrüßung",                       sub:"Willkommen & Eröffnung der Sitzung" },
-  { id:"agenda",    num:"02", title:"Agenda",                           sub:"Tagesordnung im Überblick" },
-  { id:"geburts",   num:"03", title:"Geburtstage",                      sub:"Glückwünsche & Jubiläen" },
-  { id:"themen",    num:"04", title:"Themen der Sitzung",               sub:"Diskussion & Beschlüsse" },
-  { id:"status",    num:"05", title:"Status Projekte & Veranstaltungen",sub:"Aktueller Sachstand & Updates" },
-  { id:"termine",   num:"06", title:"Terminvorschau",                   sub:"Kommende Veranstaltungen & Termine" },
+  { id:"begruess", num:"01", title:"Begrüßung",                        sub:"Willkommen & Eröffnung der Sitzung" },
+  { id:"agenda",   num:"02", title:"Agenda",                            sub:"Tagesordnung im Überblick" },
+  { id:"geburts",  num:"03", title:"Geburtstage",                       sub:"Glückwünsche & Jubiläen" },
+  { id:"themen",   num:"04", title:"Themen der Sitzung",                sub:"Diskussion & Beschlüsse" },
+  { id:"status",   num:"05", title:"Status Projekte & Veranstaltungen", sub:"Aktueller Sachstand & Updates" },
+  { id:"termine",  num:"06", title:"Terminvorschau",                    sub:"Kommende Veranstaltungen & Termine" },
 ];
 
-const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 93" style="display:block">
-<text x="148" y="52" font-family="'DM Serif Display',Georgia,serif" font-size="54" font-weight="700" fill="#003F87" text-anchor="middle">Rotary</text>
-<text x="104" y="80" font-family="'DM Sans',sans-serif" font-size="22" fill="#003F87" text-anchor="middle" font-weight="600">Club Riesa-Elbland</text>
-<g transform="translate(230,8) scale(0.72)">
-${wheelPath("#F7A81B")}
-</g></svg>`;
-
+// ── LOGO / WHEEL SVG ─────────────────────────────────────────
 function wheelPath(c){
   const cx=50,cy=50,Ro=47,Ri=37.5,Rs=29.5,Rsi=11,Rh=6.5,PI2=Math.PI*2;
   const pt=(r,a)=>[(cx+r*Math.cos(a)).toFixed(1),(cy+r*Math.sin(a)).toFixed(1)];
@@ -510,40 +526,112 @@ function wheelPath(c){
     sp+=`<polygon points="${p(Rsi,nx*wi,ny*wi)} ${p(Rsi,-nx*wi,-ny*wi)} ${p(Rs,-nx*wo,-ny*wo)} ${p(Rs,nx*wo,ny*wo)}" fill="${c}"/>`;}
   return `<path d="${g} ${h}" fill="${c}" fill-rule="evenodd"/>${sp}<circle cx="${cx}" cy="${cy}" r="${Rsi}" fill="${c}"/><circle cx="${cx}" cy="${cy}" r="${Rh}" fill="white"/>`;
 }
-
-function wheelSvg(color, size) {
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}">${wheelPath(color)}</svg>`;
-}
-
-// ── DATE ────────────────────────────────────────────────────
+// ── DATE ─────────────────────────────────────────────────────
+const now=new Date();
 const DAYS=["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
 const MONTHS=["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
-const now=new Date();
 const TODAY=`${DAYS[now.getDay()]}, ${now.getDate()}. ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
 
-// ── STATE ───────────────────────────────────────────────────
-let current = 0;
+// ── STATE ─────────────────────────────────────────────────────
+let current  = 0;
 let editMode = false;
-let data = {};
+let data     = {};          // local mirror of DB snapshot
+let slidesBuilt = false;
 
-function loadData() {
-  try { data = JSON.parse(localStorage.getItem('rc_meeting') || '{}'); } catch { data = {}; }
+// ── SYNC STATUS UI ───────────────────────────────────────────
+function setSyncStatus(state) {
+  const dot   = document.getElementById('sync-dot');
+  const label = document.getElementById('sync-label');
+  if (!dot) return;
+  const states = {
+    connecting: { color:'#aaa',   text:'Verbinde…'   },
+    online:     { color:'#22c55e',text:'Live'         },
+    saving:     { color:'#F7A81B',text:'Speichert…'   },
+    offline:    { color:'#ef4444',text:'Offline'      },
+  };
+  const s = states[state] || states.connecting;
+  dot.style.background = s.color;
+  label.textContent    = s.text;
 }
-function saveData() {
-  // collect editable content
+
+// ── FIREBASE: REAL-TIME LISTENER ─────────────────────────────
+function startRealtimeSync() {
+  db.ref(DB_PATH).on('value', snapshot => {
+    const remote = snapshot.val() || {};
+    // Merge remote into local data
+    data = remote;
+    setSyncStatus('online');
+
+    if (!slidesBuilt) {
+      buildSlides();
+      showSlide(0);
+      slidesBuilt = true;
+    } else {
+      // Patch live — update text content & files without full rebuild
+      patchSlides();
+    }
+  }, err => {
+    console.error('Firebase error:', err);
+    setSyncStatus('offline');
+    // Fallback: build empty slides
+    if (!slidesBuilt) { buildSlides(); showSlide(0); slidesBuilt = true; }
+  });
+
+  // Connection state indicator
+  db.ref('.info/connected').on('value', snap => {
+    setSyncStatus(snap.val() ? 'online' : 'offline');
+  });
+}
+
+// Patch visible content without rebuilding all slides
+function patchSlides() {
+  AGENDA.forEach(a => {
+    const el = document.getElementById('content-'+a.id);
+    if (el && !editMode) {
+      const remote = data['content_'+a.id] || '';
+      if (el.innerHTML !== remote) el.innerHTML = remote;
+    }
+    // Patch title image
+    const bg = document.getElementById('title-img-bg');
+    if (bg && data.titleImage) {
+      bg.style.backgroundImage = `url('${data.titleImage}')`;
+      bg.classList.remove('no-image'); bg.classList.add('has-image');
+    }
+    // Patch file chips
+    const savedFiles = (data.files && data.files[a.id]) || [];
+    const at = document.getElementById('attach-'+a.id);
+    if (at) {
+      at.innerHTML = savedFiles.map(f => chipHTML(a.id, f.name, f.url)).join('');
+    }
+  });
+}
+
+// ── SAVE TO FIREBASE ─────────────────────────────────────────
+async function saveData() {
+  // Collect current text from DOM
   AGENDA.forEach(a => {
     const el = document.getElementById('content-'+a.id);
     if (el) data['content_'+a.id] = el.innerHTML;
-    const at = document.getElementById('attach-'+a.id);
-    if (at) {
-      const chips = [...at.querySelectorAll('.attach-chip[data-file]')];
-      if (!data.files) data.files = {};
-      // files already stored on upload
-    }
   });
-  localStorage.setItem('rc_meeting', JSON.stringify(data));
-  toast('Gespeichert ✓');
+  setSyncStatus('saving');
+  try {
+    await db.ref(DB_PATH).set(data);
+    setSyncStatus('online');
+    toast('Gespeichert ✓');
+  } catch(e) {
+    setSyncStatus('offline');
+    toast('Fehler beim Speichern');
+  }
 }
+
+// Save a single field immediately (used after uploads)
+async function saveField(key, value) {
+  setSyncStatus('saving');
+  data[key] = value;
+  await db.ref(`${DB_PATH}/${key}`).set(value);
+  setSyncStatus('online');
+}
+
 function exportData() {
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const a = document.createElement('a');
@@ -553,28 +641,19 @@ function exportData() {
   toast('Exportiert ✓');
 }
 
-// ── BUILD SLIDES ────────────────────────────────────────────
+// ── BUILD SLIDES ─────────────────────────────────────────────
 function buildSlides() {
   const container = document.getElementById('slides');
   container.innerHTML = '';
 
-  // SLIDE 0 — Title (full-bleed image hero)
+  // SLIDE 0 — Title
   const s0 = document.createElement('div');
   s0.className = 'slide'; s0.id = 'slide-0';
-
   const savedImg = data.titleImage || '';
-  const hasBg = savedImg ? 'has-image' : 'no-image';
-
   s0.innerHTML = `
-    <!-- Background image layer -->
-    <div id="title-img-bg" class="${hasBg}"
-         style="${savedImg ? `background-image:url('${savedImg}')` : ''}">
-    </div>
-
-    <!-- Decorative wheel right side -->
+    <div id="title-img-bg" class="${savedImg ? 'has-image' : 'no-image'}"
+         style="${savedImg ? `background-image:url('${savedImg}')` : ''}"></div>
     <div class="bg-wheel">${wheelSvg('white','100%')}</div>
-
-    <!-- Upload zone (edit mode only) -->
     <div id="title-upload-zone" onclick="triggerTitleUpload()">
       <div class="img-change-badge">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -582,13 +661,10 @@ function buildSlides() {
           <circle cx="12" cy="13" r="4"/>
         </svg>
         ${savedImg ? 'Bild austauschen' : 'Bild hinzufügen'}
-        <span style="font-size:11px;opacity:.6;font-weight:400">JPG, PNG, WEBP</span>
+        <span style="font-size:11px;opacity:.6;font-weight:400">JPG · PNG · WEBP</span>
       </div>
     </div>
-    <input type="file" id="title-file-input" accept="image/*" style="display:none"
-           onchange="handleTitleImage(event)"/>
-
-    <!-- Logo badge top-right -->
+    <input type="file" id="title-file-input" accept="image/*" style="display:none" onchange="handleTitleImage(event)"/>
     <div class="title-top-bar">
       <div class="title-badge-wheel">${wheelSvg('#F7A81B', 36)}</div>
       <div class="title-badge-text">
@@ -596,8 +672,6 @@ function buildSlides() {
         <span class="t2">Club Riesa-Elbland</span>
       </div>
     </div>
-
-    <!-- Main text content bottom-left -->
     <div class="title-content">
       <div class="title-accent-line"></div>
       <div class="title-eyebrow">Rotary Club · Riesa-Elbland</div>
@@ -613,21 +687,22 @@ function buildSlides() {
   // SLIDE 1 — Agenda overview
   const s1 = document.createElement('div');
   s1.className = 'slide'; s1.id = 'slide-1';
-  const cards = AGENDA.map(a => `
-    <div class="agenda-card">
-      <div class="ac-bar"></div>
-      <div class="ac-body">
-        <div class="ac-num">${a.num}</div>
-        <div class="ac-sep"></div>
-        <div class="ac-name">${a.title}</div>
-      </div>
-    </div>`).join('');
   s1.innerHTML = `
     <div class="hdr">
       <span class="hdr-title">Agenda</span>
       <div class="hdr-logo">${LOGO_SVG}</div>
     </div>
-    <div class="agenda-grid">${cards}</div>
+    <div class="agenda-grid">
+      ${AGENDA.map(a=>`
+        <div class="agenda-card">
+          <div class="ac-bar"></div>
+          <div class="ac-body">
+            <div class="ac-num">${a.num}</div>
+            <div class="ac-sep"></div>
+            <div class="ac-name">${a.title}</div>
+          </div>
+        </div>`).join('')}
+    </div>
     <div class="slide-footer">RC Riesa-Elbland</div>`;
   container.appendChild(s1);
 
@@ -637,14 +712,6 @@ function buildSlides() {
     s.className = 'slide content-slide'; s.id = `slide-${i+2}`;
     const savedContent = data['content_'+a.id] || '';
     const savedFiles   = (data.files && data.files[a.id]) || [];
-
-    const chips = savedFiles.map(f =>
-      `<span class="attach-chip" data-file="${f.name}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        ${f.name}
-        <span class="del" onclick="removeFile('${a.id}','${f.name}',this)">✕</span>
-      </span>`).join('');
-
     s.innerHTML = `
       <div class="hdr">
         <div style="display:flex;align-items:center;gap:16px">
@@ -663,7 +730,9 @@ function buildSlides() {
             >${savedContent}</div>
           </div>
           <div class="cs-watermark">${wheelSvg('currentColor','100%')}</div>
-          <div class="attachments" id="attach-${a.id}">${chips}</div>
+          <div class="attachments" id="attach-${a.id}">
+            ${savedFiles.map(f=>chipHTML(a.id,f.name,f.url)).join('')}
+          </div>
         </div>
         <div class="upload-zone" id="zone-${a.id}"
           onclick="triggerUpload('${a.id}')"
@@ -680,121 +749,118 @@ function buildSlides() {
   });
 }
 
-// ── NAVIGATION ──────────────────────────────────────────────
+// ── NAVIGATION ───────────────────────────────────────────────
 function showSlide(n) {
   const slides = document.querySelectorAll('.slide');
-  const total = slides.length;
-  slides.forEach((s, i) => {
+  const total  = slides.length;
+  slides.forEach((s,i) => {
     s.classList.remove('active','prev');
-    if (i === n) s.classList.add('active');
-    else if (i < n) s.classList.add('prev');
+    if (i===n) s.classList.add('active');
+    else if (i<n) s.classList.add('prev');
   });
   current = n;
   document.getElementById('progress-bar').style.width = `${((n+1)/total)*100}%`;
   document.getElementById('counter').textContent = `${n+1} / ${total}`;
-  document.getElementById('btn-prev').classList.toggle('hidden', n === 0);
-  document.getElementById('btn-next').classList.toggle('hidden', n === total-1);
+  document.getElementById('btn-prev').classList.toggle('hidden', n===0);
+  document.getElementById('btn-next').classList.toggle('hidden', n===total-1);
 }
-
 function navigate(dir) {
   const total = document.querySelectorAll('.slide').length;
-  const next = Math.max(0, Math.min(total-1, current + dir));
-  showSlide(next);
+  showSlide(Math.max(0, Math.min(total-1, current+dir)));
 }
 
-// ── EDIT MODE ───────────────────────────────────────────────
+// ── EDIT MODE ────────────────────────────────────────────────
 function toggleEdit() {
   editMode = !editMode;
   document.body.classList.toggle('edit-mode', editMode);
   const btn = document.getElementById('btn-edit');
   btn.classList.toggle('active', editMode);
-  btn.querySelector('span') && (btn.querySelector('span').textContent = editMode ? 'Fertig' : 'Bearbeiten');
-  // Toggle contenteditable on all content areas
   document.querySelectorAll('.editable-content').forEach(el => {
     el.contentEditable = editMode ? 'true' : 'false';
   });
   if (!editMode) saveData();
-  toast(editMode ? 'Bearbeitungsmodus aktiv' : 'Gespeichert ✓');
+  toast(editMode ? '✏️ Bearbeitungsmodus aktiv' : 'Gespeichert ✓');
 }
 
-// ── FILES ───────────────────────────────────────────────────
+// ── FILES (Firebase Storage) ─────────────────────────────────
+function chipHTML(agendaId, fileName, url) {
+  return `<span class="attach-chip" data-file="${fileName}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span onclick="openFileUrl('${url}')" style="cursor:pointer">${fileName}</span>
+    <span class="del" onclick="removeFile('${agendaId}','${fileName}',this)">✕</span>
+  </span>`;
+}
+
 function triggerUpload(id) { document.getElementById('file-'+id).click(); }
-
-function handleFileInput(event, id) {
-  [...event.target.files].forEach(f => addFile(id, f));
-}
-function handleDrop(event, id) {
-  event.preventDefault();
+function handleFileInput(e, id) { [...e.target.files].forEach(f => uploadFile(id, f)); }
+function handleDrop(e, id) {
+  e.preventDefault();
   document.getElementById('zone-'+id).classList.remove('drag');
-  [...event.dataTransfer.files].forEach(f => addFile(id, f));
+  [...e.dataTransfer.files].forEach(f => uploadFile(id, f));
 }
 
-function addFile(agendaId, file) {
-  if (!data.files) data.files = {};
-  if (!data.files[agendaId]) data.files[agendaId] = [];
-  // Store as URL
-  const reader = new FileReader();
-  reader.onload = e => {
-    data.files[agendaId].push({ name: file.name, type: file.type, data: e.target.result });
-    renderChip(agendaId, file.name);
-    saveData();
-  };
-  reader.readAsDataURL(file);
+async function uploadFile(agendaId, file) {
+  toast(`⬆️ ${file.name} wird hochgeladen…`);
+  try {
+    const ref = storage.ref(`meetings/files/${agendaId}/${Date.now()}_${file.name}`);
+    await ref.put(file);
+    const url = await ref.getDownloadURL();
+
+    if (!data.files) data.files = {};
+    if (!data.files[agendaId]) data.files[agendaId] = [];
+    data.files[agendaId].push({ name: file.name, url });
+
+    await db.ref(`${DB_PATH}/files/${agendaId}`).set(data.files[agendaId]);
+
+    // Add chip to DOM
+    const at = document.getElementById('attach-'+agendaId);
+    if (at) at.insertAdjacentHTML('beforeend', chipHTML(agendaId, file.name, url));
+    toast(`✓ ${file.name} gespeichert`);
+  } catch(e) {
+    toast(`Fehler: ${e.message}`);
+  }
 }
 
-function renderChip(agendaId, fileName) {
-  const at = document.getElementById('attach-'+agendaId);
-  if (!at) return;
-  const chip = document.createElement('span');
-  chip.className = 'attach-chip';
-  chip.setAttribute('data-file', fileName);
-  chip.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>${fileName}<span class="del" onclick="removeFile('${agendaId}','${fileName}',this)">✕</span>`;
-  chip.onclick = (e) => { if (!e.target.classList.contains('del')) openFile(agendaId, fileName); };
-  at.appendChild(chip);
-}
-
-function removeFile(agendaId, fileName, el) {
+async function removeFile(agendaId, fileName, el) {
   el.closest('.attach-chip').remove();
-  if (data.files && data.files[agendaId])
+  if (data.files && data.files[agendaId]) {
     data.files[agendaId] = data.files[agendaId].filter(f => f.name !== fileName);
-  saveData();
+    await db.ref(`${DB_PATH}/files/${agendaId}`).set(data.files[agendaId]);
+  }
 }
 
-function openFile(agendaId, fileName) {
-  const f = data.files?.[agendaId]?.find(f => f.name === fileName);
-  if (f) { const a=document.createElement('a'); a.href=f.data; a.download=f.name; a.click(); }
+function openFileUrl(url) {
+  if (url) window.open(url, '_blank');
 }
 
-// ── TITLE IMAGE ─────────────────────────────────────────────
-function triggerTitleUpload() {
-  document.getElementById('title-file-input').click();
-}
-function handleTitleImage(event) {
+// ── TITLE IMAGE (Firebase Storage) ───────────────────────────
+function triggerTitleUpload() { document.getElementById('title-file-input').click(); }
+
+async function handleTitleImage(event) {
   const file = event.target.files[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const src = e.target.result;
-    data.titleImage = src;
+  toast('⬆️ Bild wird hochgeladen…');
+  try {
+    const ref = storage.ref(`meetings/titleImage_${Date.now()}`);
+    await ref.put(file);
+    const url = await ref.getDownloadURL();
+
+    // Update DB
+    await saveField('titleImage', url);
+
+    // Update DOM immediately
     const bg = document.getElementById('title-img-bg');
     if (bg) {
-      bg.style.backgroundImage = `url('${src}')`;
-      bg.classList.remove('no-image');
-      bg.classList.add('has-image');
+      bg.style.backgroundImage = `url('${url}')`;
+      bg.classList.remove('no-image'); bg.classList.add('has-image');
     }
-    // update badge text
-    const zone = document.getElementById('title-upload-zone');
-    if (zone) {
-      const badge = zone.querySelector('.img-change-badge');
-      if (badge) badge.firstChild.textContent = '';
-      const span = zone.querySelector('.img-change-badge svg + *');
-    }
-    saveData();
     toast('Bild gespeichert ✓');
-  };
-  reader.readAsDataURL(file);
+  } catch(e) {
+    toast(`Fehler: ${e.message}`);
+  }
 }
 
+// ── UTILITIES ────────────────────────────────────────────────
 function toggleFullscreen() {
   if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
   else document.exitFullscreen();
@@ -805,23 +871,23 @@ function toast(msg) {
   const el = document.getElementById('toast');
   el.textContent = msg; el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
 }
 
-// ── KEYBOARD ────────────────────────────────────────────────
+// ── KEYBOARD ─────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
   if (editMode && document.activeElement?.contentEditable === 'true') return;
-  if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') { e.preventDefault(); navigate(1); }
-  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')                     { e.preventDefault(); navigate(-1); }
-  if (e.key === 'f' || e.key === 'F') toggleFullscreen();
-  if (e.key === 'e' || e.key === 'E') toggleEdit();
-  if (e.key === 's' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveData(); }
+  if (e.key==='ArrowRight'||e.key==='ArrowDown'||e.key===' ') { e.preventDefault(); navigate(1); }
+  if (e.key==='ArrowLeft' ||e.key==='ArrowUp')                 { e.preventDefault(); navigate(-1); }
+  if (e.key==='f'||e.key==='F') toggleFullscreen();
+  if (e.key==='e'||e.key==='E') toggleEdit();
+  if (e.key==='s'&&(e.ctrlKey||e.metaKey)) { e.preventDefault(); saveData(); }
 });
 
-// ── INIT ────────────────────────────────────────────────────
-loadData();
-buildSlides();
-showSlide(0);
+// ── INIT ─────────────────────────────────────────────────────
+setSyncStatus('connecting');
+startRealtimeSync();
+</
 </script>
 </body>
 </html>
