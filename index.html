@@ -440,6 +440,763 @@ body:not(.edit-mode) .attachments:empty { display: none; }
 .cs-card-inner::-webkit-scrollbar-track { background: transparent; }
 .cs-card-inner::-webkit-scrollbar-thumb { background: var(--light); border-radius: 2px; }
 </style>
+</head>
+<body>
+
+<div id="progress-bar"></div>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <button class="tb-btn" id="btn-edit" onclick="toggleEdit()" title="Bearbeitungsmodus">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+    Bearbeiten
+  </button>
+  <button class="tb-btn" id="btn-save" onclick="saveData()" title="Speichern">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+    Speichern
+  </button>
+  <button class="tb-btn" onclick="toggleFullscreen()" title="Vollbild">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+  </button>
+  <button class="tb-btn" onclick="exportData()" title="Export">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+  </button>
+</div>
+
+<!-- Navigation -->
+<button class="nav-btn hidden" id="btn-prev" onclick="navigate(-1)">
+  <svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>
+</button>
+<button class="nav-btn" id="btn-next" onclick="navigate(1)">
+  <svg viewBox="0 0 24 24"><path d="M9 18l6-6-6-6" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>
+</button>
+
+<div id="counter"></div>
+<div id="fs-hint">F · Vollbild &nbsp;|&nbsp; ← → · Navigation &nbsp;|&nbsp; E · Bearbeiten</div>
+<div id="toast"></div>
+
+<div id="slides"></div>
+
+<script>
+// ── AGENDA ───────────────────────────────────────────────────
+const AGENDA = [
+  { id:"begruess", num:"01", title:"Begrüßung",                        sub:"Willkommen & Eröffnung der Sitzung" },
+  { id:"agenda",   num:"02", title:"Agenda",                            sub:"Tagesordnung im Überblick" },
+  { id:"geburts",  num:"03", title:"Geburtstage",                       sub:"Glückwünsche & Jubiläen" },
+  { id:"themen",   num:"04", title:"Themen der Sitzung",                sub:"Diskussion & Beschlüsse" },
+  { id:"status",   num:"05", title:"Status Projekte & Veranstaltungen", sub:"Aktueller Sachstand & Updates" },
+  { id:"termine",  num:"06", title:"Terminvorschau",                    sub:"Kommende Veranstaltungen & Termine" },
+];
+
+// ── WHEEL / LOGO SVG ─────────────────────────────────────────
+function wheelPath(c){
+  const cx=50,cy=50,Ro=47,Ri=37.5,Rs=29.5,Rsi=11,Rh=6.5,PI2=Math.PI*2;
+  const pt=(r,a)=>[(cx+r*Math.cos(a)).toFixed(1),(cy+r*Math.sin(a)).toFixed(1)];
+  let g="",h=`M ${pt(Rs,0).join(",")}`;
+  for(let i=0;i<24;i++){const b=(PI2/24)*i-Math.PI/2,d=(PI2/24)*.28;
+    if(i===0)g+=`M ${pt(Ri,b-d*1.6).join(",")}`;else g+=` L ${pt(Ri,b-d*1.6).join(",")}`;
+    g+=` L ${pt(Ro,b-d).join(",")} L ${pt(Ro,b+d).join(",")} L ${pt(Ri,b+d*1.6).join(",")}`;}
+  g+=" Z";
+  for(let i=72;i>=0;i--)h+=` L ${pt(Rs,(PI2/72)*i).join(",")}`;h+=" Z";
+  let sp="";const sw=6.8;
+  for(let i=0;i<6;i++){const a=(PI2/6)*i-Math.PI/2,cos=Math.cos(a),sin=Math.sin(a),nx=-sin,ny=cos,wo=sw*.45,wi=sw*.65;
+    const p=(r,dx,dy)=>[(cx+r*cos+dx).toFixed(1),(cy+r*sin+dy).toFixed(1)].join(",");
+    sp+=`<polygon points="${p(Rsi,nx*wi,ny*wi)} ${p(Rsi,-nx*wi,-ny*wi)} ${p(Rs,-nx*wo,-ny*wo)} ${p(Rs,nx*wo,ny*wo)}" fill="${c}"/>`;}
+  return `<path d="${g} ${h}" fill="${c}" fill-rule="evenodd"/>${sp}<circle cx="${cx}" cy="${cy}" r="${Rsi}" fill="${c}"/><circle cx="${cx}" cy="${cy}" r="${Rh}" fill="white"/>`;
+}
+const LOGO_SVG=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 93" style="display:block">
+<text x="148" y="52" font-family="'DM Serif Display',Georgia,serif" font-size="54" font-weight="700" fill="#003F87" text-anchor="middle">Rotary</text>
+<text x="104" y="80" font-family="'DM Sans',sans-serif" font-size="22" fill="#003F87" text-anchor="middle" font-weight="600">Club Riesa-Elbland</text>
+<g transform="translate(230,8) scale(0.72)">${wheelPath("#F7A81B")}</g></svg>`;
+function wheelSvg(color,size){
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="${size}" height="${size}">${wheelPath(color)}</svg>`;
+}
+
+// ── DATE ─────────────────────────────────────────────────────
+const now=new Date();
+const DAYS=["Sonntag","Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag"];
+const MONTHS=["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+const TODAY=`${DAYS[now.getDay()]}, ${now.getDate()}. ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+
+// ── STATE ─────────────────────────────────────────────────────
+let current  = 0;
+let editMode = false;
+let data     = {};
+
+// ── LOCALSTORAGE ─────────────────────────────────────────────
+const LS_KEY = 'rc_meeting_v2';
+
+function loadData() {
+  try { data = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); }
+  catch { data = {}; }
+}
+
+function saveData() {
+  AGENDA.forEach(a => {
+    const el = document.getElementById('content-'+a.id);
+    if (el) data['content_'+a.id] = el.innerHTML;
+  });
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(data));
+    toast('Gespeichert ✓');
+  } catch(e) {
+    // localStorage full (images too large) — save text only
+    const slim = {};
+    Object.keys(data).forEach(k => { if (!k.startsWith('file_')) slim[k] = data[k]; });
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify(slim));
+      toast('Gespeichert (Dateien nicht im Speicher)');
+    } catch { toast('Speicher voll — Seite neu laden'); }
+  }
+}
+
+function exportData() {
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = `sitzung-${now.toISOString().slice(0,10)}.json`; a.click();
+  toast('Exportiert ✓');
+}
+
+// ── BUILD SLIDES ─────────────────────────────────────────────
+function buildSlides() {
+  const container = document.getElementById('slides');
+  container.innerHTML = '';
+
+  // SLIDE 0 — Title
+  const s0 = document.createElement('div');
+  s0.className = 'slide'; s0.id = 'slide-0';
+  const savedImg = data.titleImage || '';
+  s0.innerHTML = `
+    <div id="title-img-bg" class="${savedImg?'has-image':'no-image'}"
+         style="${savedImg?`background-image:url('${savedImg}')`:''}"></div>
+    <div class="bg-wheel">${wheelSvg('white','100%')}</div>
+    <div id="title-upload-zone" onclick="triggerTitleUpload()">
+      <div class="img-change-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        ${savedImg?'Bild austauschen':'Bild hinzufügen'}
+        <span style="font-size:11px;opacity:.6;font-weight:400">JPG · PNG · WEBP</span>
+      </div>
+    </div>
+    <input type="file" id="title-file-input" accept="image/*" style="display:none" onchange="handleTitleImage(event)"/>
+    <div class="title-top-bar">
+      <div class="title-badge-wheel">${wheelSvg('#F7A81B',36)}</div>
+      <div class="title-badge-text"><span class="t1">Rotary</span><span class="t2">Club Riesa-Elbland</span></div>
+    </div>
+    <div class="title-content">
+      <div class="title-accent-line"></div>
+      <div class="title-eyebrow">Rotary Club · Riesa-Elbland</div>
+      <div class="title-main">Vereins&shy;sitzung</div>
+      <div class="title-divider"></div>
+      <div class="title-date-row">
+        <div class="title-date-pill">${TODAY}</div>
+        <div class="title-motto">"Service above Self"</div>
+      </div>
+    </div>`;
+  container.appendChild(s0);
+
+  // SLIDE 1 — Agenda overview
+  const s1 = document.createElement('div');
+  s1.className = 'slide'; s1.id = 'slide-1';
+  s1.innerHTML = `
+    <div class="hdr">
+      <span class="hdr-title">Agenda</span>
+      <div class="hdr-logo">${LOGO_SVG}</div>
+    </div>
+    <div class="agenda-grid">
+      ${AGENDA.map(a=>`
+        <div class="agenda-card">
+          <div class="ac-bar"></div>
+          <div class="ac-body">
+            <div class="ac-num">${a.num}</div>
+            <div class="ac-sep"></div>
+            <div class="ac-name">${a.title}</div>
+          </div>
+        </div>`).join('')}
+    </div>
+    <div class="slide-footer">RC Riesa-Elbland</div>`;
+  container.appendChild(s1);
+
+  // SLIDES 2–7 — Content
+  AGENDA.forEach((a,i) => {
+    const s = document.createElement('div');
+    s.className = 'slide content-slide'; s.id = `slide-${i+2}`;
+    const savedContent = data['content_'+a.id] || '';
+    const savedFiles   = data['files_'+a.id]   || [];
+    s.innerHTML = `
+      <div class="hdr">
+        <div style="display:flex;align-items:center;gap:16px">
+          <div style="background:var(--gold);color:var(--blue);font-weight:700;font-size:clamp(16px,2vw,22px);padding:6px 14px;border-radius:6px;line-height:1">${a.num}</div>
+          <span style="font-family:'DM Serif Display',serif;font-size:clamp(18px,2.4vw,30px);color:white;font-weight:400">${a.title}</span>
+        </div>
+        <div class="hdr-logo">${LOGO_SVG}</div>
+      </div>
+      <div class="cs-body">
+        <div class="cs-subtitle">${a.sub}</div>
+        <div class="cs-card">
+          <div class="cs-card-inner">
+            <div class="editable-content" id="content-${a.id}"
+              contenteditable="false"
+              data-placeholder="Hier Notizen, Tagesordnungspunkte oder Inhalte eintragen …"
+            >${savedContent}</div>
+          </div>
+          <div class="cs-watermark">${wheelSvg('currentColor','100%')}</div>
+          <div class="attachments" id="attach-${a.id}">
+            ${savedFiles.map(f=>chipHTML(a.id,f.name,f.data)).join('')}
+          </div>
+        </div>
+        <div class="upload-zone" id="zone-${a.id}"
+          onclick="triggerUpload('${a.id}')"
+          ondragover="event.preventDefault();this.classList.add('drag')"
+          ondragleave="this.classList.remove('drag')"
+          ondrop="handleDrop(event,'${a.id}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Datei hier ablegen oder klicken zum Hochladen
+        </div>
+        <input type="file" id="file-${a.id}" style="display:none" multiple onchange="handleFileInput(event,'${a.id}')"/>
+      </div>
+      <div class="slide-footer">RC Riesa-Elbland</div>`;
+    container.appendChild(s);
+  });
+}
+
+// ── NAVIGATION ───────────────────────────────────────────────
+function showSlide(n) {
+  const slides = document.querySelectorAll('.slide');
+  const total  = slides.length;
+  slides.forEach((s,i) => {
+    s.classList.remove('active','prev');
+    if (i===n) s.classList.add('active');
+    else if (i<n) s.classList.add('prev');
+  });
+  current = n;
+  document.getElementById('progress-bar').style.width = `${((n+1)/total)*100}%`;
+  document.getElementById('counter').textContent = `${n+1} / ${total}`;
+  document.getElementById('btn-prev').classList.toggle('hidden', n===0);
+  document.getElementById('btn-next').classList.toggle('hidden', n===total-1);
+}
+function navigate(dir) {
+  showSlide(Math.max(0, Math.min(document.querySelectorAll('.slide').length-1, current+dir)));
+}
+
+// ── EDIT MODE ────────────────────────────────────────────────
+function toggleEdit() {
+  editMode = !editMode;
+  document.body.classList.toggle('edit-mode', editMode);
+  document.getElementById('btn-edit').classList.toggle('active', editMode);
+  document.querySelectorAll('.editable-content').forEach(el => {
+    el.contentEditable = editMode ? 'true' : 'false';
+  });
+  if (!editMode) saveData();
+  toast(editMode ? '✏️ Bearbeitungsmodus aktiv' : 'Gespeichert ✓');
+}
+
+// ── FILES (base64 in localStorage) ───────────────────────────
+function chipHTML(agendaId, fileName, dataUrl) {
+  const safe = fileName.replace(/'/g,"\'");
+  return `<span class="attach-chip" data-file="${fileName}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span onclick="openFile('${agendaId}','${safe}')" style="cursor:pointer">${fileName}</span>
+    <span class="del" onclick="removeFile('${agendaId}','${safe}',this)">✕</span>
+  </span>`;
+}
+
+function triggerUpload(id) { document.getElementById('file-'+id).click(); }
+function handleFileInput(e,id) { [...e.target.files].forEach(f=>addFile(id,f)); }
+function handleDrop(e,id) {
+  e.preventDefault(); document.getElementById('zone-'+id).classList.remove('drag');
+  [...e.dataTransfer.files].forEach(f=>addFile(id,f));
+}
+
+function addFile(agendaId, file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    if (!data['files_'+agendaId]) data['files_'+agendaId] = [];
+    data['files_'+agendaId].push({ name: file.name, data: e.target.result });
+    const at = document.getElementById('attach-'+agendaId);
+    if (at) at.insertAdjacentHTML('beforeend', chipHTML(agendaId, file.name, e.target.result));
+    saveData();
+    toast(`✓ ${file.name} gespeichert`);
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeFile(agendaId, fileName, el) {
+  el.closest('.attach-chip').remove();
+  if (data['files_'+agendaId])
+    data['files_'+agendaId] = data['files_'+agendaId].filter(f=>f.name!==fileName);
+  saveData();
+}
+
+function openFile(agendaId, fileName) {
+  const f = data['files_'+agendaId]?.find(f=>f.name===fileName);
+  if (f) { const a=document.createElement('a'); a.href=f.data; a.download=f.name; a.click(); }
+}
+
+// ── TITLE IMAGE ───────────────────────────────────────────────
+function triggerTitleUpload() { document.getElementById('title-file-input').click(); }
+
+function handleTitleImage(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  // Resize large images before storing to save space
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    const MAX = 1920;
+    let w = img.width, h = img.height;
+    if (w > MAX) { h = Math.round(h * MAX/w); w = MAX; }
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    const src = canvas.toDataURL('image/jpeg', 0.82);
+    URL.revokeObjectURL(url);
+    data.titleImage = src;
+    const bg = document.getElementById('title-img-bg');
+    if (bg) { bg.style.backgroundImage=`url('${src}')`; bg.classList.replace('no-image','has-image'); }
+    saveData();
+    toast('Bild gespeichert ✓');
+  };
+  img.src = url;
+}
+
+// ── UTILS ─────────────────────────────────────────────────────
+function toggleFullscreen() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen();
+}
+
+let _toast;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(_toast); _toast = setTimeout(()=>el.classList.remove('show'), 2400);
+}
+
+// ── KEYBOARD ─────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (editMode && document.activeElement?.contentEditable==='true') return;
+  if (e.key==='ArrowRight'||e.key==='ArrowDown'||e.key===' ') { e.preventDefault(); navigate(1); }
+  if (e.key==='ArrowLeft' ||e.key==='ArrowUp')                  { e.preventDefault(); navigate(-1); }
+  if (e.key==='f'||e.key==='F') toggleFullscreen();
+  if (e.key==='e'||e.key==='E') toggleEdit();
+  if (e.key==='s'&&(e.ctrlKey||e.metaKey)) { e.preventDefault(); saveData(); }
+});
+
+// ── INIT ─────────────────────────────────────────────────────
+loadData();
+buildSlides();
+showSlide(0);
+</script>
+</body>
+</html>#slides {
+  width: 100vw; height: 100dvh;
+  position: relative;
+  overflow: hidden;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .45s cubic-bezier(.4,0,.2,1),
+              transform .45s cubic-bezier(.4,0,.2,1);
+  transform: translateX(60px);
+}
+.slide.active {
+  opacity: 1; pointer-events: all; transform: translateX(0);
+}
+.slide.prev {
+  opacity: 0; transform: translateX(-60px);
+}
+
+/* ── PROGRESS BAR ────────────────────────── */
+#progress-bar {
+  position: fixed; top: 0; left: 0; height: 3px;
+  background: var(--gold);
+  transition: width .4s ease;
+  z-index: 100;
+  box-shadow: 0 0 8px var(--gold);
+}
+
+/* ── NAV ARROWS ──────────────────────────── */
+.nav-btn {
+  position: fixed; top: 50%; transform: translateY(-50%);
+  width: 44px; height: 44px;
+  background: rgba(255,255,255,.12);
+  border: 1px solid rgba(255,255,255,.2);
+  backdrop-filter: blur(8px);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50;
+  transition: background .2s, opacity .2s;
+  opacity: .7;
+}
+.nav-btn:hover { background: rgba(255,255,255,.25); opacity: 1; }
+.nav-btn svg { width: 18px; height: 18px; fill: white; }
+#btn-prev { left: 16px; }
+#btn-next { right: 16px; }
+#btn-prev.hidden, #btn-next.hidden { opacity: 0; pointer-events: none; }
+
+/* ── SLIDE COUNTER ───────────────────────── */
+#counter {
+  position: fixed; bottom: 18px; right: 22px;
+  font-size: 11px; font-weight: 500; letter-spacing: .06em;
+  color: rgba(255,255,255,.45);
+  z-index: 50;
+}
+
+/* ── TOOLBAR ─────────────────────────────── */
+#toolbar {
+  position: fixed; top: 16px; right: 16px;
+  display: flex; gap: 8px;
+  z-index: 100;
+}
+.tb-btn {
+  height: 36px; padding: 0 14px;
+  border-radius: 18px;
+  border: 1.5px solid rgba(255,255,255,.25);
+  background: rgba(0,0,0,.25);
+  backdrop-filter: blur(10px);
+  color: rgba(255,255,255,.85);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px; font-weight: 500;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 6px;
+  transition: background .2s, border-color .2s;
+}
+.tb-btn:hover { background: rgba(255,255,255,.2); border-color: rgba(255,255,255,.5); }
+.tb-btn.active { background: var(--gold); border-color: var(--gold); color: var(--blue); }
+.tb-btn svg { width: 14px; height: 14px; }
+
+/* ══════════════════════════════════════════
+   SLIDE 1 – TITLE  (full-bleed image hero)
+══════════════════════════════════════════ */
+#slide-0 {
+  background: var(--blue);
+  position: relative; overflow: hidden;
+}
+
+/* Hero image layer */
+#title-img-bg {
+  position: absolute; inset: 0;
+  background-size: cover; background-position: center;
+  background-image: none;
+  transition: opacity .6s ease;
+}
+#title-img-bg.has-image { opacity: 1; }
+#title-img-bg::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(
+    105deg,
+    rgba(0,30,80,.88) 0%,
+    rgba(0,40,100,.78) 35%,
+    rgba(0,20,60,.45) 65%,
+    rgba(0,10,40,.15) 100%
+  );
+}
+
+/* Default bg pattern when no image */
+#title-img-bg.no-image {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255,255,255,.025) 0px,
+    rgba(255,255,255,.025) 1px,
+    transparent 1px,
+    transparent 28px
+  );
+}
+
+/* Upload hover zone — full slide in edit mode */
+#title-upload-zone {
+  position: absolute; inset: 0; z-index: 20;
+  display: none; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+body.edit-mode #title-upload-zone { display: flex; }
+
+#title-upload-zone:hover .img-change-badge { opacity: 1; transform: scale(1.04); }
+.img-change-badge {
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(12px);
+  border: 2px solid rgba(255,255,255,.3);
+  border-radius: 16px;
+  padding: 18px 28px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  color: white; font-size: 13px; font-weight: 500;
+  opacity: 0; transform: scale(.96);
+  transition: opacity .25s, transform .25s;
+  pointer-events: none;
+}
+.img-change-badge svg { width: 32px; height: 32px; opacity: .85; }
+
+/* Content layer */
+.title-content {
+  position: relative; z-index: 10;
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  padding: clamp(24px,5vh,52px) clamp(32px,5vw,72px);
+}
+
+/* Top bar: logo badge */
+.title-top-bar {
+  position: absolute; top: clamp(16px,3vh,32px); right: clamp(20px,3vw,44px);
+  z-index: 10;
+  background: rgba(255,255,255,.12);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 14px;
+  padding: clamp(8px,1.2vh,14px) clamp(12px,2vw,22px);
+  display: flex; align-items: center; gap: 10px;
+}
+.title-badge-wheel { opacity: .9; }
+.title-badge-text {
+  display: flex; flex-direction: column; gap: 1px;
+}
+.title-badge-text .t1 {
+  font-size: clamp(11px,.9vw,13px); font-weight: 700;
+  color: var(--gold); letter-spacing: .1em; text-transform: uppercase;
+}
+.title-badge-text .t2 {
+  font-size: clamp(9px,.75vw,11px); font-weight: 400;
+  color: rgba(255,255,255,.7); letter-spacing: .06em;
+}
+
+/* Gold accent line */
+.title-accent-line {
+  width: clamp(36px,4vw,56px); height: 3px;
+  background: var(--gold); border-radius: 2px;
+  margin-bottom: clamp(10px,1.8vh,18px);
+}
+
+.title-eyebrow {
+  font-size: clamp(9px,.95vw,12px);
+  font-weight: 600; letter-spacing: .2em;
+  color: var(--gold); text-transform: uppercase;
+  margin-bottom: clamp(8px,1.2vh,14px);
+}
+.title-main {
+  font-family: 'DM Serif Display', serif;
+  font-size: clamp(38px,7vw,96px);
+  line-height: .98; color: white;
+  margin-bottom: clamp(16px,2.5vh,28px);
+  text-shadow: 0 2px 24px rgba(0,0,0,.3);
+}
+.title-divider {
+  width: 100%; height: 1px;
+  background: rgba(255,255,255,.15);
+  margin-bottom: clamp(12px,2vh,22px);
+}
+.title-date-row {
+  display: flex; align-items: center; gap: 14px;
+}
+.title-date-pill {
+  background: var(--gold);
+  color: var(--blue);
+  font-size: clamp(10px,.95vw,13px); font-weight: 700;
+  letter-spacing: .04em;
+  padding: 5px 14px; border-radius: 20px;
+  white-space: nowrap;
+}
+.title-motto {
+  font-size: clamp(9px,.8vw,11px);
+  color: rgba(255,255,255,.38); letter-spacing: .08em;
+  font-style: italic;
+}
+
+/* Huge background wheel — decorative right side */
+.bg-wheel {
+  position: absolute; right: -4%; top: 50%;
+  transform: translateY(-50%);
+  width: clamp(280px,40vw,520px);
+  opacity: .06; pointer-events: none; z-index: 5;
+}
+
+/* ══════════════════════════════════════════
+   SLIDE 2 – AGENDA OVERVIEW
+══════════════════════════════════════════ */
+#slide-1 {
+  background: var(--offwht);
+  display: flex; flex-direction: column;
+}
+.hdr {
+  background: var(--blue);
+  padding: 0 4vw;
+  height: clamp(60px, 10vh, 88px);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+  border-bottom: 4px solid var(--gold);
+}
+.hdr-title {
+  font-size: clamp(16px, 2.2vw, 26px);
+  font-weight: 600; letter-spacing: .12em;
+  color: white; text-transform: uppercase;
+}
+.hdr-logo { height: clamp(28px, 4.5vh, 48px); }
+
+.agenda-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: repeat(3, 1fr);
+  gap: clamp(8px, 1.2vh, 14px);
+  padding: clamp(10px, 2vh, 22px) clamp(16px, 3vw, 40px);
+}
+.agenda-card {
+  background: white;
+  border-radius: var(--r);
+  border: 1px solid var(--light);
+  display: flex; align-items: stretch;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transition: transform .18s, box-shadow .18s;
+}
+.agenda-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,63,135,.13); }
+.ac-bar { width: 7px; background: var(--gold); flex-shrink: 0; }
+.ac-body { padding: clamp(8px, 1.2vh, 14px) clamp(10px, 1.5vw, 18px); display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+.ac-num { font-size: clamp(18px, 2.4vw, 28px); font-weight: 700; color: var(--blue); line-height: 1; }
+.ac-sep { width: 100%; height: 1px; background: var(--light); margin: 4px 0; }
+.ac-name { font-size: clamp(11px, 1.3vw, 15px); color: var(--text); font-weight: 400; }
+
+.slide-footer {
+  height: 32px; background: white;
+  display: flex; align-items: center; justify-content: center;
+  border-top: 2px solid var(--gold);
+  font-size: 10px; letter-spacing: .08em;
+  color: var(--muted); flex-shrink: 0;
+  text-transform: uppercase;
+}
+
+/* ══════════════════════════════════════════
+   SLIDES 3–8 – CONTENT SLIDES
+══════════════════════════════════════════ */
+.content-slide {
+  background: var(--offwht);
+  display: flex; flex-direction: column;
+}
+.cs-body {
+  flex: 1; padding: clamp(10px, 1.8vh, 20px) clamp(16px, 3vw, 40px);
+  display: flex; flex-direction: column; gap: clamp(6px, 1vh, 12px);
+  overflow: hidden;
+}
+.cs-subtitle {
+  font-size: clamp(10px, 1.1vw, 13px);
+  font-style: italic; color: var(--muted);
+  padding-left: 2px;
+}
+.cs-card {
+  flex: 1;
+  background: white;
+  border-radius: var(--r);
+  border: 1px solid var(--light);
+  box-shadow: var(--shadow);
+  position: relative;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.cs-card-inner {
+  flex: 1; padding: clamp(14px, 2vh, 22px) clamp(16px, 2.5vw, 28px);
+  position: relative; z-index: 2;
+  overflow-y: auto;
+}
+
+/* Watermark wheel */
+.cs-watermark {
+  position: absolute;
+  right: -4%; bottom: -8%;
+  width: 52%; opacity: .05;
+  pointer-events: none; z-index: 1;
+}
+
+/* Editable content */
+.editable-content {
+  font-size: clamp(12px, 1.35vw, 16px);
+  line-height: 1.75; color: var(--text);
+  min-height: 40px;
+  outline: none;
+  white-space: pre-wrap;
+}
+.editable-content:empty::before {
+  content: attr(data-placeholder);
+  color: #C5CEDF; font-style: italic;
+  pointer-events: none;
+}
+
+/* Attachments */
+.attachments {
+  padding: 8px clamp(16px, 2.5vw, 28px) 10px;
+  display: flex; flex-wrap: wrap; gap: 6px;
+  border-top: 1px solid var(--light);
+}
+.attach-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--offwht); border: 1px solid var(--light);
+  border-radius: 20px; padding: 3px 10px 3px 8px;
+  font-size: 11px; color: var(--blue); cursor: pointer;
+  transition: background .15s;
+}
+.attach-chip:hover { background: var(--light); }
+.attach-chip svg { width: 12px; height: 12px; }
+.attach-chip .del { color: var(--muted); margin-left: 2px; }
+.attach-chip .del:hover { color: #c0392b; }
+
+/* File upload zone */
+.upload-zone {
+  border: 2px dashed var(--light);
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+  font-size: 11px; color: var(--muted);
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  margin: 0 clamp(16px, 2.5vw, 28px) 12px;
+}
+.upload-zone:hover, .upload-zone.drag { border-color: var(--gold); background: #FFFBF0; color: var(--blue); }
+.upload-zone svg { width: 20px; height: 20px; margin: 0 auto 4px; display: block; }
+
+/* Edit mode highlights */
+body.edit-mode .editable-content {
+  border: 1.5px dashed rgba(247,168,27,.5);
+  border-radius: 4px; padding: 4px 6px;
+  cursor: text;
+}
+body.edit-mode .editable-content:focus {
+  border-color: var(--gold);
+  background: rgba(247,168,27,.04);
+  box-shadow: 0 0 0 3px rgba(247,168,27,.12);
+}
+body.edit-mode .upload-zone { display: block; }
+body:not(.edit-mode) .upload-zone { display: none; }
+body:not(.edit-mode) .attachments:empty { display: none; }
+
+/* ── NOTIFICATIONS ───────────────────────── */
+#toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(60px);
+  background: var(--text); color: white;
+  padding: 10px 20px; border-radius: 20px;
+  font-size: 12px; font-weight: 500;
+  z-index: 200; transition: transform .3s ease;
+  white-space: nowrap; pointer-events: none;
+}
+#toast.show { transform: translateX(-50%) translateY(0); }
+
+/* ── FULLSCREEN HINT ─────────────────────── */
+#fs-hint {
+  position: fixed; bottom: 18px; left: 22px;
+  font-size: 10px; color: rgba(255,255,255,.3);
+  z-index: 50; letter-spacing: .04em;
+}
+
+/* Scrollbar */
+.cs-card-inner::-webkit-scrollbar { width: 4px; }
+.cs-card-inner::-webkit-scrollbar-track { background: transparent; }
+.cs-card-inner::-webkit-scrollbar-thumb { background: var(--light); border-radius: 2px; }
+</style>
 <!-- Firebase SDKs (compat = no bundler needed) -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
