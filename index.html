@@ -118,143 +118,144 @@ body {
 .tb-btn svg { width: 14px; height: 14px; }
 
 /* ══════════════════════════════════════════
-   SLIDE 1 – TITLE  (full-bleed image hero)
+   SLIDE 1 – TITLE  (top: text | bottom: image)
 ══════════════════════════════════════════ */
 #slide-0 {
   background: var(--blue);
+  display: flex; flex-direction: column;
   position: relative; overflow: hidden;
 }
 
-/* Hero image layer */
-#title-img-bg {
+/* ── Top section (navy, text) ────────────── */
+.title-top {
+  flex: 0 0 58%;
+  background: var(--blue);
+  display: flex; flex-direction: column;
+  justify-content: center;
+  padding: clamp(16px,3vh,36px) clamp(28px,4.5vw,64px);
+  position: relative; overflow: hidden;
+}
+
+/* Decorative wheel — faint, right side of top */
+.bg-wheel {
+  position: absolute; right: -2%; top: 50%;
+  transform: translateY(-50%);
+  width: clamp(200px,32vw,400px);
+  opacity: .06; pointer-events: none; z-index: 0;
+}
+
+/* Gold divider between top and bottom */
+.title-divider-bar {
+  height: 4px; flex-shrink: 0;
+  background: var(--gold);
+}
+
+/* ── Bottom image section ────────────────── */
+.title-img-bottom {
+  flex: 1;
+  position: relative;
+  background: #0a1a3a;
+  overflow: hidden;
+}
+.title-img-bottom .img-fill {
   position: absolute; inset: 0;
   background-size: cover; background-position: center;
-  background-image: none;
-  transition: opacity .6s ease;
+  transition: opacity .5s ease;
 }
-#title-img-bg.has-image { opacity: 1; }
-#title-img-bg::after {
-  content: '';
+/* Placeholder pattern when no image */
+.title-img-bottom .img-placeholder {
   position: absolute; inset: 0;
-  background: linear-gradient(
-    105deg,
-    rgba(0,30,80,.88) 0%,
-    rgba(0,40,100,.78) 35%,
-    rgba(0,20,60,.45) 65%,
-    rgba(0,10,40,.15) 100%
-  );
-}
-
-/* Default bg pattern when no image */
-#title-img-bg.no-image {
-  background-image: repeating-linear-gradient(
+  background: repeating-linear-gradient(
     45deg,
-    rgba(255,255,255,.025) 0px,
-    rgba(255,255,255,.025) 1px,
-    transparent 1px,
-    transparent 28px
+    rgba(255,255,255,.022) 0, rgba(255,255,255,.022) 1px,
+    transparent 1px, transparent 24px
   );
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 6px; color: rgba(255,255,255,.2);
+  font-size: clamp(10px,.9vw,12px); letter-spacing: .08em;
+}
+.title-img-bottom .img-placeholder svg {
+  width: clamp(24px,3vw,36px); height: clamp(24px,3vw,36px); opacity: .3;
 }
 
-/* Upload hover zone — full slide in edit mode */
+/* Upload hover zone — bottom panel only in edit mode */
 #title-upload-zone {
   position: absolute; inset: 0; z-index: 20;
   display: none; align-items: center; justify-content: center;
   cursor: pointer;
+  background: rgba(0,20,60,.35);
+  backdrop-filter: blur(2px);
+  transition: background .2s;
 }
 body.edit-mode #title-upload-zone { display: flex; }
-
+#title-upload-zone:hover { background: rgba(0,20,60,.55); }
 #title-upload-zone:hover .img-change-badge { opacity: 1; transform: scale(1.04); }
+
 .img-change-badge {
-  background: rgba(0,0,0,.55);
+  background: rgba(0,0,0,.6);
   backdrop-filter: blur(12px);
   border: 2px solid rgba(255,255,255,.3);
   border-radius: 16px;
-  padding: 18px 28px;
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 16px 26px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
   color: white; font-size: 13px; font-weight: 500;
   opacity: 0; transform: scale(.96);
   transition: opacity .25s, transform .25s;
   pointer-events: none;
 }
-.img-change-badge svg { width: 32px; height: 32px; opacity: .85; }
+.img-change-badge svg { width: 28px; height: 28px; opacity: .85; }
 
-/* Content layer */
-.title-content {
-  position: relative; z-index: 10;
-  width: 100%; height: 100%;
-  display: flex; flex-direction: column; justify-content: flex-end;
-  padding: clamp(24px,5vh,52px) clamp(32px,5vw,72px);
-}
-
-/* Top bar: logo badge */
+/* ── Top content elements ────────────────── */
 .title-top-bar {
-  position: absolute; top: clamp(14px,2.5vh,28px); right: clamp(18px,2.5vw,36px);
+  position: absolute; top: clamp(12px,2vh,22px); right: clamp(16px,2.5vw,32px);
   z-index: 10;
-  background: rgba(255,255,255,.15);
+  background: rgba(255,255,255,.13);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid rgba(255,255,255,.25);
-  border-radius: 14px;
-  padding: clamp(8px,1.2vh,14px) clamp(14px,2vw,22px);
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 12px;
+  padding: clamp(7px,1vh,12px) clamp(12px,1.8vw,20px);
   display: flex; align-items: center;
 }
-.title-slogan {
-  margin-top: clamp(10px,1.8vh,18px);
-  font-size: clamp(10px,.95vw,13px);
-  font-style: italic;
-  color: rgba(255,255,255,.55);
-  letter-spacing: .02em;
+.title-content {
+  position: relative; z-index: 2;
+  display: flex; flex-direction: column;
 }
-
-/* Gold accent line */
 .title-accent-line {
-  width: clamp(36px,4vw,56px); height: 3px;
+  width: clamp(32px,3.5vw,50px); height: 3px;
   background: var(--gold); border-radius: 2px;
-  margin-bottom: clamp(10px,1.8vh,18px);
+  margin-bottom: clamp(8px,1.4vh,16px);
 }
-
 .title-eyebrow {
-  font-size: clamp(9px,.95vw,12px);
+  font-size: clamp(8px,.85vw,11px);
   font-weight: 600; letter-spacing: .2em;
   color: var(--gold); text-transform: uppercase;
-  margin-bottom: clamp(8px,1.2vh,14px);
+  margin-bottom: clamp(6px,1vh,12px);
 }
 .title-main {
   font-family: 'DM Serif Display', serif;
-  font-size: clamp(38px,7vw,96px);
-  line-height: .98; color: white;
-  margin-bottom: clamp(16px,2.5vh,28px);
-  text-shadow: 0 2px 24px rgba(0,0,0,.3);
+  font-size: clamp(34px,6.2vw,82px);
+  line-height: .97; color: white;
+  margin-bottom: clamp(12px,2vh,22px);
+  text-shadow: 0 2px 20px rgba(0,0,0,.25);
 }
 .title-divider {
   width: 100%; height: 1px;
-  background: rgba(255,255,255,.15);
-  margin-bottom: clamp(12px,2vh,22px);
+  background: rgba(255,255,255,.14);
+  margin-bottom: clamp(10px,1.6vh,18px);
 }
-.title-date-row {
-  display: flex; align-items: center; gap: 14px;
-}
+.title-date-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .title-date-pill {
-  background: var(--gold);
-  color: var(--blue);
-  font-size: clamp(10px,.95vw,13px); font-weight: 700;
-  letter-spacing: .04em;
-  padding: 5px 14px; border-radius: 20px;
+  background: var(--gold); color: var(--blue);
+  font-size: clamp(9px,.85vw,12px); font-weight: 700;
+  letter-spacing: .04em; padding: 4px 13px; border-radius: 20px;
   white-space: nowrap;
 }
-.title-motto {
-  font-size: clamp(9px,.8vw,11px);
-  color: rgba(255,255,255,.38); letter-spacing: .08em;
-  font-style: italic;
-}
-
-/* Huge background wheel — decorative right side */
-.bg-wheel {
-  position: absolute; right: -4%; top: 50%;
-  transform: translateY(-50%);
-  width: clamp(280px,40vw,520px);
-  opacity: .06; pointer-events: none; z-index: 5;
+.title-slogan {
+  margin-top: clamp(8px,1.4vh,14px);
+  font-size: clamp(9px,.85vw,12px); font-style: italic;
+  color: rgba(255,255,255,.48); letter-spacing: .02em;
 }
 
 /* ══════════════════════════════════════════
@@ -431,6 +432,22 @@ body:not(.edit-mode) .attachments:empty { display: none; }
   font-size: 10px; color: rgba(255,255,255,.3);
   z-index: 50; letter-spacing: .04em;
 }
+
+.bday-photo {
+  object-fit: cover; border-radius: 50%;
+  border: 2px solid var(--light);
+}
+.bday-soon {
+  font-size: 11px; font-weight: 600; color: var(--blue);
+  background: var(--offwht); border: 1px solid var(--light);
+  padding: 2px 8px; border-radius: 10px; flex-shrink: 0;
+  white-space: nowrap;
+}
+.bday-past-label {
+  font-size: 11px; color: var(--muted);
+  flex-shrink: 0; white-space: nowrap;
+}
+.bday-past { opacity: .6; }
 
 /* Scrollbar */
 .cs-card-inner::-webkit-scrollbar { width: 4px; }
@@ -833,25 +850,103 @@ if (typeof pdfjsLib !== 'undefined') {
 }
 
 async function extractPDFText(file) {
-  const buf  = await file.arrayBuffer();
-  const pdf  = await pdfjsLib.getDocument({ data: buf }).promise;
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
   let text = '';
   for (let p = 1; p <= pdf.numPages; p++) {
-    const page    = await pdf.getPage(p);
+    const page = await pdf.getPage(p);
     const content = await page.getTextContent();
-    const items   = content.items.map(i => i.str);
-    text += items.join(' ') + '\n';
+    text += content.items.map(i => i.str).join(' ') + '\n';
   }
   return text;
 }
 
+async function loadPDFDoc(file) {
+  const buf = await file.arrayBuffer();
+  return pdfjsLib.getDocument({ data: buf }).promise;
+}
+
+// ── MEMBER PDF PARSER (MyRotary Mitglieder Übersicht) ─────────
+function parseMemberPDF(text) {
+  // Fix names split across lines by narrow PDF columns
+  text = text
+    .replace(/([A-Za-z\u00c4-\u00fc-]+)\n([a-z\u00e4\u00f6\u00fc\u00df]\s)/g, '$1$2')
+    .replace(/Mitglieder\s+[\u00dc]bersicht/g, ' ')
+    .replace(/\d{2}\.\d{2}\.\d{4}\s+Mitglieder.*?(?:\d+\s*\/\s*\d+)/g, ' ')
+    .replace(/Foto\s+Nachname\s+Vorname[\s\S]*?Zugeh[\u00f6]rigkeit/g, ' ')
+    .replace(/Aktivmitglied/g, ' ');
+
+  const members = [], seen = new Set();
+  text.split('\n').map(l => l.trim()).filter(Boolean).forEach(line => {
+    const dm = line.match(/(\d{2}\.\d{2}\.\d{4})/);
+    if (!dm) return;
+    const d = parseDate(dm[1]);
+    if (!d) return;
+    const before = line.slice(0, line.indexOf(dm[1])).trim();
+    const words  = before.split(/\s+/).filter(Boolean);
+    if (words.length < 2) return;
+    const nachname = words[0].replace(/,$/,'');
+    const vorname  = words[1].replace(/,$/,'');
+    const name = `${vorname} ${nachname}`;
+    if (seen.has(name + dm[1])) return;
+    seen.add(name + dm[1]);
+    members.push({ name, nachname, vorname,
+      initials: `${vorname[0]}${nachname[0]}`.toUpperCase(),
+      ...d, photo: null });
+  });
+  return members.sort((a,b) => a.month!==b.month ? a.month-b.month : a.day-b.day);
+}
+
+// ── PHOTO EXTRACTOR via PDF canvas rendering ──────────────────
+async function extractPhotosFromPDF(pdfDoc, members) {
+  const byDate = {};
+  for (let pn = 1; pn <= pdfDoc.numPages; pn++) {
+    const page = await pdfDoc.getPage(pn);
+    const scale = 3, vp = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = vp.width; canvas.height = vp.height;
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    const tc = await page.getTextContent();
+    tc.items.forEach(item => {
+      if (!/^\d{2}\.\d{2}\.\d{4}$/.test(item.str.trim())) return;
+      const canvasY = (vp.height/scale - item.transform[5]) * scale;
+      const px = 8*scale, pw = 42*scale, ph = 30*scale, py = canvasY - 22*scale;
+      if (py < 0 || py+ph > canvas.height) return;
+      const t = document.createElement('canvas');
+      t.width = t.height = 72;
+      const tc2 = t.getContext('2d');
+      tc2.fillStyle = '#e8eef8'; tc2.fillRect(0,0,72,72);
+      tc2.drawImage(canvas, px, py, pw, ph, 0, 0, 72, 72);
+      byDate[item.str.trim()] = t.toDataURL('image/jpeg', 0.82);
+    });
+  }
+  members.forEach(m => {
+    const k = `${String(m.day).padStart(2,'0')}.${String(m.month).padStart(2,'0')}.${m.year}`;
+    if (byDate[k]) m.photo = byDate[k];
+  });
+  return members;
+}
+
+// ── ±14-DAY BIRTHDAY WINDOW ───────────────────────────────────
+function daysUntilBirthday(day, month) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const yr = today.getFullYear();
+  let bday = new Date(yr, month-1, day);
+  let diff = Math.round((bday - today) / 86400000);
+  if (diff < -14) { bday = new Date(yr+1, month-1, day); diff = Math.round((bday - today) / 86400000); }
+  return diff;
+}
+
 // Smart birthday extractor from free text
 function extractBirthdays(text) {
+  // Detect MyRotary Mitglieder Übersicht format
+  if (text.includes('Mitglieder') && text.includes('Nachname') && text.includes('Vorname') && text.includes('Geburts-Datum')) {
+    return parseMemberPDF(text);
+  }
+
+  // Generic fallback
   const results = [];
   const seen = new Set();
-
-  // Pattern: "Vorname Nachname ... DD. Monat YYYY" or "DD.MM.YYYY ... Name"
-  // Also handles table-like formats with varying whitespace
   const lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
 
   lines.forEach(line => {
@@ -1049,9 +1144,22 @@ async function openPDFImport(file, mode) {
   modal.classList.add('open');
 
   try {
+    body.innerHTML = '<div class="parsing-spinner">PDF wird gelesen…</div>';
     const rawText = await extractPDFText(file);
-    const parsed  = mode === 'birthdays' ? extractBirthdays(rawText) : extractEvents(rawText);
-    pendingItems  = parsed;
+    let parsed = mode === 'birthdays' ? extractBirthdays(rawText) : extractEvents(rawText);
+
+    // For member list PDFs: also extract photos
+    if (mode === 'birthdays' && rawText.includes('Geburts-Datum')) {
+      body.innerHTML = '<div class="parsing-spinner">Fotos werden extrahiert…</div>';
+      try {
+        const pdfDoc = await loadPDFDoc(file);
+        parsed = await extractPhotosFromPDF(pdfDoc, parsed);
+      } catch(photoErr) {
+        console.warn('Photo extraction failed:', photoErr);
+      }
+    }
+
+    pendingItems = parsed;
     renderModalContent(rawText, parsed, mode);
   } catch(e) {
     document.getElementById('modal-body').innerHTML = `
@@ -1233,7 +1341,7 @@ function closeModal() {
 }
 
 
-// ── BIRTHDAY DISPLAY ──────────────────────────────────────────
+// ── BIRTHDAY DISPLAY (±14 day window, with photos) ────────────
 function renderBirthdays(list) {
   if (!list || list.length === 0) {
     return `<div class="empty-state">
@@ -1241,53 +1349,68 @@ function renderBirthdays(list) {
         <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
       </svg>
       <p>Noch keine Geburtstagsliste importiert.</p>
-      <span class="hint">Im Bearbeitungsmodus CSV importieren.</span>
+      <span class="hint">Im Bearbeitungsmodus PDF importieren.</span>
     </div>`;
   }
-  const curMonth = now.getMonth() + 1;
-  const curDay   = now.getDate();
 
-  const thisMonth = list.filter(b => b.month === curMonth);
-  const nextMonth = list.filter(b => b.month === (curMonth % 12) + 1);
+  // Calculate days until/since each birthday and filter ±14 days
+  const windowed = list
+    .map(b => ({ ...b, diff: daysUntilBirthday(b.day, b.month) }))
+    .filter(b => b.diff >= -14 && b.diff <= 14)
+    .sort((a,b) => a.diff - b.diff);
+
+  if (!windowed.length) {
+    // No birthdays in window — show next upcoming birthday
+    const upcoming = list
+      .map(b => ({ ...b, diff: daysUntilBirthday(b.day, b.month) }))
+      .filter(b => b.diff > 0)
+      .sort((a,b) => a.diff - b.diff);
+    const next = upcoming[0];
+    return `<div class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+      </svg>
+      <p>Keine Geburtstage in den nächsten/letzten 14 Tagen.</p>
+      ${next ? `<span class="hint">Nächster: ${next.name} in ${next.diff} Tagen (${next.day}. ${MONTHS[next.month-1]})</span>` : ''}
+    </div>`;
+  }
+
+  // Group: past (negative diff), today (0), upcoming (positive)
+  const past     = windowed.filter(b => b.diff < 0);
+  const today    = windowed.filter(b => b.diff === 0);
+  const upcoming = windowed.filter(b => b.diff > 0);
+
+  function bdayCard(b, cls = '') {
+    const age      = b.year ? now.getFullYear() - b.year + (b.diff > 0 ? 1 : 0) : 0;
+    const avatar   = b.photo
+      ? `<img src="${b.photo}" class="bday-avatar bday-photo" alt="${b.name}"/>`
+      : `<div class="bday-avatar">${b.initials || b.name.split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase()}</div>`;
+    const diffLabel = b.diff === 0 ? '🎂 Heute!'
+      : b.diff > 0 ? `in ${b.diff} Tag${b.diff===1?'':'en'}`
+      : `vor ${Math.abs(b.diff)} Tag${Math.abs(b.diff)===1?'':'en'}`;
+    const diffCls = b.diff === 0 ? 'bday-badge' : b.diff > 0 ? 'bday-soon' : 'bday-past-label';
+    return `<div class="bday-item ${cls}">
+      ${avatar}
+      <div style="flex:1;min-width:0">
+        <div class="bday-name">${b.name}</div>
+        <div class="bday-date">${b.day}. ${MONTHS[b.month-1]}${age ? ' · ' + age + '. Geburtstag' : ''}</div>
+      </div>
+      <span class="${diffCls}">${diffLabel}</span>
+    </div>`;
+  }
+
   let html = '';
-
-  if (thisMonth.length) {
-    html += `<div class="data-section-label">Dieser Monat — ${MONTHS[curMonth-1]}</div>`;
-    thisMonth.forEach(b => {
-      const isToday = b.day === curDay;
-      const age = b.year ? now.getFullYear() - b.year : 0;
-      const initials = b.name.split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase();
-      html += `<div class="bday-item ${isToday?'today':'this-month'}">
-        <div class="bday-avatar">${initials}</div>
-        <div><div class="bday-name">${b.name}</div>
-        <div class="bday-date">${b.day}. ${MONTHS[b.month-1]}${b.year?' · Jahrgang '+b.year:''}</div></div>
-        ${isToday ? '<span class="bday-badge">🎂 Heute!</span>' : age ? `<span class="bday-age">${age}. Geb.</span>` : ''}
-      </div>`;
-    });
+  if (today.length) {
+    html += `<div class="data-section-label" style="color:var(--gold)">🎉 Heute Geburtstag!</div>`;
+    today.forEach(b => { html += bdayCard(b, 'today'); });
   }
-  if (nextMonth.length) {
-    html += `<div class="data-section-label" style="margin-top:8px">Nächster Monat — ${MONTHS[curMonth%12]}</div>`;
-    nextMonth.forEach(b => {
-      const age = b.year ? now.getFullYear() - b.year + 1 : 0;
-      const initials = b.name.split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase();
-      html += `<div class="bday-item">
-        <div class="bday-avatar" style="background:var(--muted)">${initials}</div>
-        <div><div class="bday-name">${b.name}</div>
-        <div class="bday-date">${b.day}. ${MONTHS[b.month-1]}${b.year?' · Jahrgang '+b.year:''}</div></div>
-        ${age ? `<span class="bday-age">${age}. Geb.</span>` : ''}
-      </div>`;
-    });
+  if (upcoming.length) {
+    html += `<div class="data-section-label" style="margin-top:${today.length?'10px':'0'}">Bevorstehend — nächste 14 Tage</div>`;
+    upcoming.forEach(b => { html += bdayCard(b, 'this-month'); });
   }
-  if (!thisMonth.length && !nextMonth.length) {
-    html += `<div class="data-section-label">Nächste Geburtstage</div>`;
-    list.slice(0,8).forEach(b => {
-      const initials = b.name.split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase();
-      html += `<div class="bday-item">
-        <div class="bday-avatar" style="background:var(--muted)">${initials}</div>
-        <div><div class="bday-name">${b.name}</div>
-        <div class="bday-date">${b.day}. ${MONTHS[b.month-1]}${b.year?' · Jahrgang '+b.year:''}</div></div>
-      </div>`;
-    });
+  if (past.length) {
+    html += `<div class="data-section-label" style="margin-top:8px;opacity:.6">Vergangene — letzte 14 Tage</div>`;
+    past.slice().reverse().forEach(b => { html += bdayCard(b, 'bday-past'); });
   }
   return html;
 }
@@ -1350,38 +1473,61 @@ function buildSlides() {
   const container = document.getElementById('slides');
   container.innerHTML = '';
 
-  // SLIDE 0 — Title
+  // SLIDE 0 — Title (top: navy text | bottom: photo panel)
   const s0 = document.createElement('div');
   s0.className = 'slide'; s0.id = 'slide-0';
   const savedImg = data.titleImage || '';
+
   s0.innerHTML = `
-    <div id="title-img-bg" class="${savedImg?'has-image':'no-image'}"
-         style="${savedImg?`background-image:url('${savedImg}')`:''}"></div>
-    <div class="bg-wheel">${wheelSvg('white','100%')}</div>
-    <div id="title-upload-zone" onclick="triggerTitleUpload()">
-      <div class="img-change-badge">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
-          <circle cx="12" cy="13" r="4"/>
-        </svg>
-        ${savedImg?'Bild austauschen':'Bild hinzufügen'}
-        <span style="font-size:11px;opacity:.6;font-weight:400">JPG · PNG · WEBP</span>
+    <!-- TOP: Navy section with text -->
+    <div class="title-top">
+      <div class="bg-wheel">${wheelSvg('white','100%')}</div>
+      <div class="title-top-bar">
+        <img src="${CLUB_BADGE}" alt="RC Riesa-Elbland"
+             style="height:clamp(32px,4.5vh,54px);width:auto;filter:drop-shadow(0 1px 4px rgba(0,0,0,.18))"/>
+      </div>
+      <div class="title-content">
+        <div class="title-accent-line"></div>
+        <div class="title-eyebrow">Rotary Club · Riesa-Elbland</div>
+        <div class="title-main">Vereins&shy;sitzung</div>
+        <div class="title-divider"></div>
+        <div class="title-date-row">
+          <div class="title-date-pill">${TODAY}</div>
+        </div>
+        <div class="title-slogan">"Rotary lässt Kinderaugen leuchten"</div>
       </div>
     </div>
-    <input type="file" id="title-file-input" accept="image/*" style="display:none" onchange="handleTitleImage(event)"/>
-    <div class="title-top-bar">
-      <img src="${CLUB_BADGE}" alt="RC Riesa-Elbland" style="height:clamp(38px,5.5vh,62px);width:auto;filter:drop-shadow(0 1px 4px rgba(0,0,0,.18))"/>
-    </div>
-    <div class="title-content">
-      <div class="title-accent-line"></div>
-      <div class="title-eyebrow">Rotary Club · Riesa-Elbland</div>
-      <div class="title-main">Vereins&shy;sitzung</div>
-      <div class="title-divider"></div>
-      <div class="title-date-row">
-        <div class="title-date-pill">${TODAY}</div>
+
+    <!-- GOLD DIVIDER -->
+    <div class="title-divider-bar"></div>
+
+    <!-- BOTTOM: Photo panel -->
+    <div class="title-img-bottom">
+      ${savedImg
+        ? `<div class="img-fill" style="background-image:url('${savedImg}')"></div>`
+        : `<div class="img-placeholder">
+             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+               <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+               <circle cx="12" cy="13" r="4"/>
+             </svg>
+             <span>Bild hinzufügen — im Bearbeitungsmodus klicken</span>
+           </div>`
+      }
+      <!-- Upload zone (edit mode only) -->
+      <div id="title-upload-zone" onclick="triggerTitleUpload()">
+        <div class="img-change-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          ${savedImg ? 'Bild austauschen' : 'Bild hinzufügen'}
+          <span style="font-size:11px;opacity:.6;font-weight:400">JPG · PNG · WEBP</span>
+        </div>
       </div>
-      <div class="title-slogan">"Rotary lässt Kinderaugen leuchten"</div>
-    </div>`;
+    </div>
+
+    <input type="file" id="title-file-input" accept="image/*" style="display:none"
+           onchange="handleTitleImage(event)"/>`;
   container.appendChild(s0);
 
   // SLIDE 1 — Agenda overview
@@ -1591,8 +1737,19 @@ function handleTitleImage(event) {
     const src = canvas.toDataURL('image/jpeg', 0.82);
     URL.revokeObjectURL(url);
     data.titleImage = src;
-    const bg = document.getElementById('title-img-bg');
-    if (bg) { bg.style.backgroundImage=`url('${src}')`; bg.classList.replace('no-image','has-image'); }
+    // Update bottom image panel
+    const imgBottom = document.querySelector('.title-img-bottom');
+    if (imgBottom) {
+      // Replace placeholder or existing fill
+      let fill = imgBottom.querySelector('.img-fill');
+      if (!fill) {
+        imgBottom.querySelector('.img-placeholder')?.remove();
+        fill = document.createElement('div');
+        fill.className = 'img-fill';
+        imgBottom.insertBefore(fill, imgBottom.firstChild);
+      }
+      fill.style.backgroundImage = `url('${src}')`;
+    }
     saveData(); toast('Bild gespeichert ✓');
   };
   img.src = url;
