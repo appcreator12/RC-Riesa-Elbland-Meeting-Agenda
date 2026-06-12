@@ -890,8 +890,7 @@ async function loadPDFDoc(file) {
 
 // ── MEMBER PDF PARSER (MyRotary Mitglieder Übersicht) ─────────
 function parseMemberPDF(text) {
-  // The row-based extractor sometimes splits "Petschauer-Thiemi" / "g" into two lines
-  // Rejoin: a line that is just 1-3 lowercase chars likely belongs to the previous line
+  // Fix names split across lines by narrow PDF columns
   const rawLines = text.split('\n');
   const lines = [];
   rawLines.forEach(l => {
@@ -899,34 +898,40 @@ function parseMemberPDF(text) {
     if (!t) return;
     // Single small word (overflow of hyphenated name) → append to previous line
     if (/^[a-zäöüß]{1,4}$/.test(t) && lines.length) {
-      lines[lines.length - 1] += t; // join without space (e.g., "Thiemi" + "g" = "Thiemig")
+      lines[lines.length - 1] += t;
     } else {
       lines.push(t);
     }
   });
 
+  // Academic title patterns to remove from name field
+  const STRIP_TITLES = /\b(Dipl\.?\s*[\w.-]*(\s*\(?\s*(?:BA|FH|öc\.?|Vw\.?)\s*\)?\s*)?|Dr\.\s*[\w.]*|Prof\.?\s*Dr\.?\s*[\w.]*|Dip\.?\s*[\w.]*|Studien\w*\s*a\.D\.|Oberb\w*\s*a\.D\.|a\.D\.|med\.|jur\.|päd\.|theol\.|dent\.)\s*/gi;
+
   const members = [], seen = new Set();
 
   lines.forEach(line => {
-    // Skip header rows and footer rows
-    if (/Nachname|Vorname|Geburts-Datum|Zugehörigkeit|Aktivmitglied.*Aktivmitglied/i.test(line)) return;
+    // Skip header rows and footers
+    if (/Nachname|Vorname|Geburts-Datum|Zugehörigkeit/i.test(line)) return;
     if (/Mitglieder\s*[ÜU]bersicht|\d+\s*\/\s*\d+/i.test(line)) return;
 
-    // Each data row has exactly one DD.MM.YYYY date
     const dm = line.match(/(\d{2}\.\d{2}\.\d{4})/);
     if (!dm) return;
     const d = parseDate(dm[1]);
     if (!d) return;
 
-    // Text before the date = "Nachname Vorname [optional academic title]"
-    const before = line.slice(0, line.indexOf(dm[1])).trim();
-    // Remove "Foto" if it was accidentally included (header leakage)
-    const words = before.replace(/\bFoto\b/g, '').trim().split(/\s+/).filter(Boolean);
+    // Text before date — strip academic titles, "Foto" header, "Aktivmitglied"
+    let before = line.slice(0, line.indexOf(dm[1]))
+      .replace(/\bFoto\b/g, '')
+      .replace(STRIP_TITLES, ' ')
+      .replace(/\bAktivmitglied\b/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    const words = before.split(/\s+/).filter(Boolean);
     if (words.length < 2) return;
 
     const nachname = words[0].replace(/,$/,'');
     const vorname  = words[1].replace(/,$/,'');
-    // Guard: names should start with uppercase
     if (!/^[A-ZÄÖÜ]/.test(nachname) || !/^[A-ZÄÖÜ]/.test(vorname)) return;
 
     const name = `${vorname} ${nachname}`;
@@ -946,26 +951,61 @@ function parseMemberPDF(text) {
 // ── PHOTO EXTRACTOR via PDF canvas rendering ──────────────────
 async function extractPhotosFromPDF(pdfDoc, members) {
   const byDate = {};
+
   for (let pn = 1; pn <= pdfDoc.numPages; pn++) {
-    const page = await pdfDoc.getPage(pn);
-    const scale = 3, vp = page.getViewport({ scale });
+    const page  = await pdfDoc.getPage(pn);
+    const scale = 3;
+    const vp    = page.getViewport({ scale });
+
     const canvas = document.createElement('canvas');
-    canvas.width = vp.width; canvas.height = vp.height;
+    canvas.width  = vp.width;
+    canvas.height = vp.height;
     await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    const ctx = canvas.getContext('2d');
+
     const tc = await page.getTextContent();
+
     tc.items.forEach(item => {
       if (!/^\d{2}\.\d{2}\.\d{4}$/.test(item.str.trim())) return;
-      const canvasY = (vp.height/scale - item.transform[5]) * scale;
-      const px = 8*scale, pw = 42*scale, ph = 30*scale, py = canvasY - 22*scale;
-      if (py < 0 || py+ph > canvas.height) return;
-      const t = document.createElement('canvas');
-      t.width = t.height = 72;
-      const tc2 = t.getContext('2d');
-      tc2.fillStyle = '#e8eef8'; tc2.fillRect(0,0,72,72);
-      tc2.drawImage(canvas, px, py, pw, ph, 0, 0, 72, 72);
-      byDate[item.str.trim()] = t.toDataURL('image/jpeg', 0.82);
+
+      // item.transform[5] = Y in PDF user-space (pt, origin bottom-left)
+      const pdfY    = item.transform[5];
+      const pdfH    = vp.height / scale;          // page height in pt
+      const canvasY = (pdfH - pdfY) * scale;       // convert to canvas coords
+
+      // Foto column: x ≈ 15–58pt on A4 (left margin + photo width)
+      // Row photo is vertically centered ~15pt above baseline
+      const px = Math.round(15 * scale);
+      const pw = Math.round(43 * scale);
+      const ph = Math.round(36 * scale);
+      const py = Math.round(canvasY - 28 * scale); // above text baseline
+
+      if (py < 0 || py + ph > canvas.height || px + pw > canvas.width) return;
+
+      // Check if this crop area has real content (not blank white)
+      const imgData = ctx.getImageData(px, py, pw, ph).data;
+      let darkPixels = 0;
+      for (let i = 0; i < imgData.length; i += 4) {
+        const brightness = (imgData[i] + imgData[i+1] + imgData[i+2]) / 3;
+        if (brightness < 220) darkPixels++;
+      }
+      const totalPixels = (pw * ph);
+      // Skip if >95% of pixels are near-white (no real photo content)
+      if (darkPixels / totalPixels < 0.05) return;
+
+      // Crop to 72×72 rounded thumbnail
+      const thumb = document.createElement('canvas');
+      thumb.width = thumb.height = 72;
+      const tctx = thumb.getContext('2d');
+      tctx.fillStyle = '#e8eef8';
+      tctx.fillRect(0, 0, 72, 72);
+      tctx.drawImage(canvas, px, py, pw, ph, 0, 0, 72, 72);
+
+      byDate[item.str.trim()] = thumb.toDataURL('image/jpeg', 0.85);
     });
   }
+
+  // Attach photos to members by birth date string
   members.forEach(m => {
     const k = `${String(m.day).padStart(2,'0')}.${String(m.month).padStart(2,'0')}.${m.year}`;
     if (byDate[k]) m.photo = byDate[k];
