@@ -839,7 +839,17 @@ function exportData() {
   a.click(); toast('Exportiert ✓');
 }
 
-// ── PDF IMPORT ────────────────────────────────────────────────
+function clearBirthdays() {
+  if (!confirm('Geburtstagsliste wirklich löschen?')) return;
+  delete data.birthdays;
+  saveData();
+  const el = document.getElementById('bday-list');
+  if (el) el.innerHTML = renderBirthdays(null) +
+    `<div class="data-watermark">${wheelSvg('currentColor','100%')}</div>`;
+  toast('Geburtstagsliste gelöscht');
+}
+
+
 let modalMode    = null;   // 'birthdays' | 'events'
 let pendingItems = [];     // parsed items waiting for confirmation
 
@@ -1663,6 +1673,12 @@ function buildSlides() {
                 <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
               </svg>
               PDF importieren
+            </button>
+            <button class="csv-import-btn" style="background:#c0392b" onclick="clearBirthdays()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+              </svg>
+              Daten löschen
             </button>
             <input type="file" id="pdf-bday" accept=".pdf" style="display:none"
                    onchange="openPDFImport(this.files[0],'birthdays')"/>
