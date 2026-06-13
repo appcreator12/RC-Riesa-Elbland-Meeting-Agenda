@@ -1050,6 +1050,36 @@ async function extractPhotosFromPDF(pdfDoc, members) {
   return members;
 }
 
+// ── BIRTHDAY EXTRACTOR ───────────────────────────────────────
+function extractBirthdays(text) {
+  // Detect MyRotary Mitglieder Übersicht format
+  if (text.includes('Geburts-Datum') || (text.includes('Nachname') && text.includes('Vorname') && text.includes('Aktivmitglied'))) {
+    return parseMemberPDF(text);
+  }
+  // Generic fallback: scan for Name + DD.MM.YYYY patterns
+  const results = [], seen = new Set();
+  const lines = text.split(/\n/).map(l => l.trim()).filter(Boolean);
+  const monthMap = {jan:1,feb:2,'mär':3,mar:3,apr:4,mai:5,may:5,jun:6,jul:7,aug:8,sep:9,okt:10,oct:10,nov:11,dez:12,dec:12};
+  lines.forEach(line => {
+    const dm = line.match(/(\d{2}\.\d{2}\.\d{4})/);
+    if (!dm) return;
+    const d = parseDate(dm[1]);
+    if (!d) return;
+    const before = line.slice(0, line.indexOf(dm[1])).trim();
+    const words  = before.split(/\s+/).filter(Boolean);
+    if (words.length < 2) return;
+    const nachname = words[0].replace(/[,.]$/,'');
+    const vorname  = words[1].replace(/[,.]$/,'');
+    if (!/^[A-ZÄÖÜ]/.test(nachname) || !/^[A-ZÄÖÜ]/.test(vorname)) return;
+    const name = `${vorname} ${nachname}`;
+    const key  = name + dm[1];
+    if (seen.has(key)) return;
+    seen.add(key);
+    results.push({ name, nachname, vorname, initials:`${vorname[0]}${nachname[0]}`.toUpperCase(), ...d, photo:null });
+  });
+  return results.sort((a,b) => a.month !== b.month ? a.month-b.month : a.day-b.day);
+}
+
 // ── DATE STRING PARSER ───────────────────────────────────────
 // Supports: DD.MM.YYYY, DD/MM/YYYY, YYYY-MM-DD, DD. Monat YYYY, DD. Monat
 function parseDate(str) {
