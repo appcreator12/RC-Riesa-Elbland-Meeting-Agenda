@@ -1049,13 +1049,6 @@ async function extractPhotosFromPDF(pdfDoc, members) {
   });
   return members;
 }
-year: m[3] ? +m[3] : 0 }); }
-      }
-    }
-  });
-
-  return results.sort((a,b) => a.month !== b.month ? a.month - b.month : a.day - b.day);
-}
 
 // ── DATE STRING PARSER ───────────────────────────────────────
 // Supports: DD.MM.YYYY, DD/MM/YYYY, YYYY-MM-DD, DD. Monat YYYY, DD. Monat
