@@ -810,26 +810,22 @@ const TODAY  = `${DAYS[now.getDay()]}, ${now.getDate()}. ${MONTHS[now.getMonth()
 let current  = 0;
 let editMode = false;
 let data     = {};
-const LS_KEY = 'rc_meeting_v2';
+const LS_KEY = 'rc_meeting_v4'; // bumped → clears old cached birthday data
 
 // ── STORAGE ───────────────────────────────────────────────────
 function loadData() {
-  try {
-    data = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
-    // Auto-clear stale birthday data if names still contain titles
-    // (detectable: name has 3+ words, or contains known title abbreviations)
-    if (data.birthdays && data.birthdays.length > 0) {
-      const hasStaleName = data.birthdays.some(b =>
-        b.name && (b.name.split(' ').length > 2 ||
-        /\b(Dr|Dipl|Prof|Dip|Studien|Oberb|med|jur|päd)\b/.test(b.name))
-      );
-      if (hasStaleName) {
-        console.log('Stale birthday data detected — clearing for re-import');
-        delete data.birthdays;
-        localStorage.setItem(LS_KEY, JSON.stringify(data));
+  // Silently migrate old keys, discarding stale birthday data
+  ['rc_meeting_v2','rc_meeting_v3'].forEach(old => {
+    try {
+      const prev = JSON.parse(localStorage.getItem(old) || 'null');
+      if (prev) {
+        const { birthdays: _ignored, ...rest } = prev;
+        localStorage.setItem(LS_KEY, JSON.stringify(rest));
+        localStorage.removeItem(old);
       }
-    }
-  } catch { data = {}; }
+    } catch {}
+  });
+  try { data = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { data = {}; }
 }
 function saveData() {
   AGENDA.forEach(a => {
@@ -978,7 +974,7 @@ async function extractPhotosFromPDF(pdfDoc, members) {
 
   for (let pn = 1; pn <= pdfDoc.numPages; pn++) {
     const page  = await pdfDoc.getPage(pn);
-    const scale = 2;
+    const scale = 3;                                // higher = sharper photos
     const vp    = page.getViewport({ scale });
 
     const canvas = document.createElement('canvas');
@@ -988,56 +984,62 @@ async function extractPhotosFromPDF(pdfDoc, members) {
 
     const tc = await page.getTextContent();
 
-    // Collect all date items with their Y positions
+    // Collect all date items with Y positions, sorted top→bottom
     const dateItems = tc.items
       .filter(i => /^\d{2}\.\d{2}\.\d{4}$/.test(i.str.trim()))
       .map(i => ({ str: i.str.trim(), pdfY: i.transform[5] }))
-      .sort((a, b) => b.pdfY - a.pdfY); // top → bottom
+      .sort((a, b) => b.pdfY - a.pdfY);
 
     if (!dateItems.length) continue;
 
-    // Calculate row height from Y-distance between adjacent rows
-    let rowHeight = 26; // default pt
+    // Calculate row height from Y gaps between adjacent dates
+    let rowPt = 26;
     if (dateItems.length >= 2) {
       const gaps = [];
       for (let i = 0; i < dateItems.length - 1; i++)
-        gaps.push(dateItems[i].pdfY - dateItems[i+1].pdfY);
-      // Use median gap (filter outliers like page breaks)
-      const sorted = [...gaps].sort((a,b) => a-b);
-      rowHeight = sorted[Math.floor(sorted.length / 2)];
+        gaps.push(Math.abs(dateItems[i].pdfY - dateItems[i+1].pdfY));
+      const sorted = [...gaps].filter(g => g > 5 && g < 50).sort((a,b) => a-b);
+      if (sorted.length) rowPt = sorted[Math.floor(sorted.length / 2)];
     }
 
     const pdfH = vp.height / scale;
 
     dateItems.forEach(({ str, pdfY }) => {
-      // Canvas Y of text baseline
-      const baseY = (pdfH - pdfY) * scale;
+      const baselineY = (pdfH - pdfY) * scale; // canvas Y of text baseline
 
-      // Foto column: x = 0 to ~60pt. Photo is vertically centered in its row.
-      // Row spans from baseline upward by ~rowHeight pt
-      const px = Math.round(2  * scale);
-      const pw = Math.round(58 * scale);
-      const ph = Math.round(rowHeight * 0.9 * scale);
-      const py = Math.round(baseY - ph);          // above baseline
+      // Photo is ABOVE the text baseline, in the left "Foto" column
+      // Try multiple vertical offsets to find best photo crop
+      const rowH    = rowPt * scale;
+      const photoW  = Math.round(52 * scale);  // Foto column ~52pt wide
+      const photoH  = Math.round(rowPt * 0.88 * scale);
 
-      if (py < 0 || py + ph > canvas.height) return;
+      // Scan vertical offsets: photo could be anywhere from baseline upward
+      const offsets = [0.92, 0.75, 1.05, 0.60]; // fraction of rowH above baseline
+      let bestCrop = null, bestDark = 0;
 
-      // Skip if crop area is mostly white (no photo)
-      const imgData = ctx.getImageData(px, py, pw, ph).data;
-      let dark = 0;
-      for (let i = 0; i < imgData.length; i += 4)
-        if ((imgData[i] + imgData[i+1] + imgData[i+2]) / 3 < 215) dark++;
-      if (dark / (pw * ph) < 0.04) return;
+      for (const off of offsets) {
+        const py = Math.round(baselineY - rowH * off);
+        if (py < 0 || py + photoH > canvas.height) continue;
 
-      // Render crop to 60×60 thumbnail
+        const imgData = ctx.getImageData(8, py, photoW, photoH).data;
+        let dark = 0;
+        for (let i = 0; i < imgData.length; i += 4)
+          if ((imgData[i] + imgData[i+1] + imgData[i+2]) / 3 < 210) dark++;
+
+        if (dark > bestDark) { bestDark = dark; bestCrop = py; }
+      }
+
+      // Need at least 5% non-white pixels
+      if (!bestCrop || bestDark / (photoW * photoH) < 0.05) return;
+
       const thumb = document.createElement('canvas');
-      thumb.width = thumb.height = 60;
+      thumb.width = thumb.height = 64;
       const tc2 = thumb.getContext('2d');
-      tc2.fillStyle = '#e8eef8';
-      tc2.fillRect(0, 0, 60, 60);
-      tc2.drawImage(canvas, px, py, pw, ph, 0, 0, 60, 60);
+      tc2.fillStyle = '#dce5f4';
+      tc2.fillRect(0, 0, 64, 64);
+      tc2.drawImage(canvas, 8, bestCrop, photoW, photoH, 0, 0, 64, 64);
 
-      byDate[str] = thumb.toDataURL('image/jpeg', 0.85);
+      byDate[str] = thumb.toDataURL('image/jpeg', 0.88);
     });
   }
 
@@ -1046,7 +1048,8 @@ async function extractPhotosFromPDF(pdfDoc, members) {
     if (byDate[k]) m.photo = byDate[k];
   });
   return members;
-}year: m[3] ? +m[3] : 0 }); }
+}
+year: m[3] ? +m[3] : 0 }); }
       }
     }
   });
