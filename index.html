@@ -1440,6 +1440,16 @@ function closeModal() {
 }
 
 
+// ── ±14-DAY BIRTHDAY WINDOW ───────────────────────────────────
+function daysUntilBirthday(day, month) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const yr = today.getFullYear();
+  let bday = new Date(yr, month-1, day);
+  let diff = Math.round((bday - today) / 86400000);
+  if (diff < -14) { bday = new Date(yr+1, month-1, day); diff = Math.round((bday - today) / 86400000); }
+  return diff;
+}
+
 // ── BIRTHDAY DISPLAY (±14 day window, with photos) ────────────
 function renderBirthdays(list) {
   if (!list || list.length === 0) {
