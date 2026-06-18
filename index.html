@@ -129,7 +129,7 @@ body {
 
 /* ── Top section (navy, text) ────────────── */
 .title-top {
-  flex: 0 0 58%;
+  flex: 0 0 38%;
   background: var(--blue);
   display: flex; flex-direction: column;
   justify-content: center;
@@ -160,7 +160,7 @@ body {
 }
 .title-img-bottom .img-fill {
   position: absolute; inset: 0;
-  background-size: cover; background-position: center;
+  background-size: contain; background-position: center; background-repeat: no-repeat;
   transition: opacity .5s ease;
 }
 /* Placeholder pattern when no image */
@@ -1154,11 +1154,11 @@ function parseRotaryTerminPDF(text) {
   ];
 
   // Find all row start positions: DD.MM.YYYY HH:MM - HH:MM
-  const rowRx = /(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})\s*-\s*\d{2}:\d{2}/g;
+  const rowRx = /(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})/g;
   const positions = [];
   let m;
   while ((m = rowRx.exec(text)) !== null) {
-    positions.push({ pos: m.index, date: m[1], time: m[2], end: m.index + m[0].length });
+    positions.push({ pos: m.index, date: m[1], timeStart: m[2], timeEnd: m[3], end: m.index + m[0].length });
   }
 
   const results = [];
@@ -1180,8 +1180,13 @@ function parseRotaryTerminPDF(text) {
     // Everything before the category: Ort + Thema
     let raw = chunk.slice(0, catIdx).trim();
 
-    // 1. Strip location (Ort column — before the title)
-    for (const rx of STRIP_ORT) raw = raw.replace(rx, ' ');
+    // 1. Strip location (Ort column — before the title) — capture what's removed
+    let locParts = [];
+    for (const rx of STRIP_ORT) {
+      raw = raw.replace(rx, (match) => { locParts.push(match.trim()); return ' '; });
+    }
+    const loc = locParts.join(', ').replace(/\s{2,}/g, ' ').trim();
+
     // 2. Strip trailing notes (after the title)
     for (const rx of STRIP_NOTES) raw = raw.replace(rx, '');
 
@@ -1196,7 +1201,13 @@ function parseRotaryTerminPDF(text) {
     if (!title || title.length < 2) return;
 
     const d = parseDate(row.date);
-    if (d) results.push({ title, ...d, time: row.time, loc: '' });
+    if (d) results.push({
+      title, ...d,
+      timeStart: row.timeStart,
+      timeEnd: row.timeEnd,
+      time: `${row.timeStart} – ${row.timeEnd}`,
+      loc
+    });
   });
 
   return results.sort((a,b) => new Date(a.year,a.month-1,a.day) - new Date(b.year,b.month-1,b.day));
@@ -1343,12 +1354,17 @@ let rowCounter = 0;
 
 function eventRowHTML(e, i) {
   const dateStr = `${String(e.day).padStart(2,'0')}.${String(e.month).padStart(2,'0')}.${e.year||now.getFullYear()}`;
+  const timeStr = e.time || (e.timeStart ? `${e.timeStart} – ${e.timeEnd}` : '');
+  const loc = (e.loc || '').replace(/"/g, '&quot;');
   rowCounter = Math.max(rowCounter, i + 1);
-  return `<tr id="erow-${i}">
+  return `<tr id="erow-${i}" data-loc="${loc}">
     <td style="text-align:center;color:var(--muted);font-size:11px">${i+1}</td>
     <td><input class="et-input" value="${dateStr}" placeholder="TT.MM.JJJJ" id="edate-${i}"/></td>
-    <td><input class="et-input" value="${e.time||''}" placeholder="19:00" id="etime-${i}"/></td>
-    <td><input class="et-input" value="${e.title}" placeholder="Veranstaltungsname" id="etitle-${i}" style="min-width:160px"/></td>
+    <td><input class="et-input" value="${timeStr}" placeholder="19:00 – 21:00" id="etime-${i}" style="min-width:110px"/></td>
+    <td>
+      <input class="et-input" value="${e.title}" placeholder="Veranstaltungsname" id="etitle-${i}" style="min-width:160px"/>
+      ${loc ? `<div style="font-size:10.5px;color:var(--muted);padding:2px 6px 0">📍 ${loc}</div>` : ''}
+    </td>
     <td><button class="et-del" onclick="deleteEventRow(${i})" title="Zeile löschen">✕</button></td>
   </tr>`;
 }
@@ -1423,10 +1439,11 @@ function confirmImport() {
       const dateV = document.getElementById('edate-'+id)?.value.trim()  || '';
       const timeV = document.getElementById('etime-'+id)?.value.trim()  || '';
       const title = document.getElementById('etitle-'+id)?.value.trim() || '';
+      const loc   = row.dataset.loc || '';
       if (!title) return;
       const d = parseDate(dateV);
-      if (d) confirmed.push({ title, ...d, time: timeV, loc: '' });
-      else if (title) confirmed.push({ title, day:1, month:1, year:now.getFullYear(), time:timeV, loc:'' });
+      if (d) confirmed.push({ title, ...d, time: timeV, loc });
+      else if (title) confirmed.push({ title, day:1, month:1, year:now.getFullYear(), time:timeV, loc });
     });
     if (!confirmed.length) { toast('Keine Termine eingetragen'); return; }
     data.events = confirmed.sort((a,b) => new Date(a.year,a.month-1,a.day) - new Date(b.year,b.month-1,b.day));
@@ -1550,6 +1567,7 @@ function renderEvents(list) {
     html += `<div class="data-section-label">Kommende Termine</div>`;
     upcoming.forEach(e => {
       const isNext = upcoming[0] === e;
+      const meta = [e.time, e.loc ? `📍 ${e.loc}` : ''].filter(Boolean).join('  ·  ');
       html += `<div class="event-item ${isNext?'upcoming':''}">
         <div class="event-date-block">
           <div class="eday">${e.day}</div>
@@ -1557,7 +1575,7 @@ function renderEvents(list) {
         </div>
         <div class="event-info">
           <div class="event-title">${e.title}</div>
-          <div class="event-meta">${[e.time, e.loc].filter(Boolean).join(' · ')}</div>
+          <div class="event-meta">${meta}</div>
         </div>
       </div>`;
     });
@@ -1565,6 +1583,7 @@ function renderEvents(list) {
   if (past.length && upcoming.length < 4) {
     html += `<div class="data-section-label" style="margin-top:8px;opacity:.5">Vergangene Termine</div>`;
     past.slice(-3).forEach(e => {
+      const meta = [e.time, e.loc ? `📍 ${e.loc}` : ''].filter(Boolean).join('  ·  ');
       html += `<div class="event-item" style="opacity:.5">
         <div class="event-date-block" style="background:var(--muted)">
           <div class="eday">${e.day}</div>
@@ -1572,7 +1591,7 @@ function renderEvents(list) {
         </div>
         <div class="event-info">
           <div class="event-title">${e.title}</div>
-          <div class="event-meta">${[e.time, e.loc].filter(Boolean).join(' · ')}</div>
+          <div class="event-meta">${meta}</div>
         </div>
       </div>`;
     });
