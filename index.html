@@ -694,6 +694,7 @@ body.edit-mode .csv-import-btn { display: flex; }
 .event-info { flex: 1; min-width: 0; }
 .event-title { font-size: clamp(15px,1.7vw,22px); font-weight: 500; color: var(--text); }
 .event-meta { font-size: clamp(12px,1.1vw,15px); color: var(--muted); margin-top: 3px; }
+.event-thema { font-size: clamp(12px,1.1vw,15px); color: var(--blue); margin-top: 2px; font-weight: 500; }
 .event-item.upcoming .event-date-block { background: var(--gold); color: var(--blue); }
 
 /* Empty state */
@@ -1107,106 +1108,107 @@ function parseDate(str) {
 }
 
 // ── EVENT EXTRACTOR ───────────────────────────────────────────
-function extractEvents(text) {
-  // Fix split words from PDF rendering (MyRotary line-wrapping artifacts)
-  text = text
-    .replace(/Sonderveran\s+staltung/g, 'Sonderveranstaltung')
-    .replace(/Vorstandsve\s+ranstaltung/g, 'Vorstandsveranstaltung')
-    .replace(/veran\s+staltung/gi, 'veranstaltung');
+// ── PDF ITEM EXTRACTOR (with x/y positions, for column-based parsing) ──
+async function extractPDFItemsByPage(file) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const pages = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    const items = content.items
+      .map(i => ({ x0: i.transform[4], y0: i.transform[5], str: i.str.replace(/\u00a0/g, ' ').trim() }))
+      .filter(i => i.str);
+    pages.push(items);
+  }
+  return pages;
+}
 
-  // Detect MyRotary "Termin-Übersicht" format
+function extractEvents(text) {
+  // Used only for the generic fallback path (non-MyRotary PDFs)
   if (text.includes('Termin-Übersicht') || text.includes('Datum Uhrzeit Ort Thema')) {
-    return parseRotaryTerminPDF(text);
+    return null; // signal: caller should use the column-based parser instead
   }
   return extractEventsGeneric(text);
 }
 
-// ── SPECIALIZED PARSER: MyRotary Termin-Übersicht ────────────
-// Format: DD.MM.YYYY HH:MM - HH:MM [Ort] [Thema] [Kategorie] [Namen...]
-function parseRotaryTerminPDF(text) {
-  // Strip page headers and footers
-  text = text
-    .replace(/Termin-Übersicht[\s\S]*?(?=\d{2}\.\d{2}\.\d{4})/g, ' ')
-    .replace(/Rotary Club Riesa-Elbland/g, ' ')
-    .replace(/\d{2}\.\d{2}\.\d{4}\s+https?:\/\/\S+.*?(?:\d+ von \d+)/gs, ' ')
-    .replace(/Datum\s+Uhrzeit\s+Ort\s+Thema.*?Serie/gs, ' ')
-    .replace(/\s{2,}/g, ' ');
+// ── SPECIALIZED PARSER: MyRotary Termin-Übersicht (column/position based) ──
+// Uses real x/y coordinates from the PDF so multi-line cells (e.g. "Sonderveran"
+// + "staltung" wrapping across lines) never bleed into neighboring columns.
+// Column x-ranges measured from the actual MyRotary export layout (in pt):
+//   Ort   ≈ 139.5   Thema ≈ 233.3   Kat. ≈ 389.7   Referent/Protokollant/Leitung further right
+function parseRotaryTerminPDFColumns(pages) {
+  // Column x-ranges (pt) measured from the actual MyRotary export layout.
+  // pdf.js gives Datum and Uhrzeit as TWO SEPARATE text items (unlike some
+  // other extractors that merge them) — so we match them by shared y0.
+  const DATUM_MIN = 20,  DATUM_MAX = 76;    // "01.07.2026"
+  const UHRZEIT_MIN = 76, UHRZEIT_MAX = 130; // "18:00 - 21:00"
+  const ORT_MIN = 130,    ORT_MAX = 226;     // Ort column
+  const THEMA_MIN = 226,  THEMA_MAX = 387;   // Thema column (before Kat. ~389.7)
+  const FOOTER_Y_GUARD = 40;                 // page footer / page-number text sits below this
 
-  // Known categories — appear right after the Thema column
-  const CATS = ['Sonderveranstaltung', 'Vorstandsveranstaltung', 'Meeting'];
-
-  // Strip Ort column content (appears BEFORE Thema — NOT greedy)
-  const STRIP_ORT = [
-    /Hotel\s+Mercure\s*-\s*Festsaal[^,]*(?:,\s*[^,]+){0,2}?,?\s*\d{5}\s*\w+/gi,
-    /Bahnhofstra[sß]e\s*\d+[^,]*,?\s*\d{5}\s*\w+/gi,
-    /\d{5}\s+[A-Za-z]\w+/g,
-    /\b(Oschatz|K[oö]tzschenbrode)\b/gi,
-    /genaue\s+Zeit\s+und\s+Ort\s+folgen/gi,   // phrase only — theme follows after
-    /\bInfos?\s+folgen\b/gi,                   // phrase only — theme follows after
-    /\bRiesa\b(?!\s*-)/gi,
-  ];
-  // Strip trailing notes (appear AFTER Thema — greedy ok)
   const STRIP_NOTES = [
-    /\s*,?\s+weitere\s+Infos?\s+folgen[^\n]*/gi,
-    /\s*-\s+weitere[^\n]*/gi,
-    /\s+m[oö]glicherweise[^\n]*/gi,
-    /,?\s+Näheres\s+folgt[^\n]*/gi,
+    /\s*,?\s+weitere\s+Infos?\s+folgen.*/gi,
+    /\s*-\s+weitere.*/gi,
+    /\s+m[oö]glicherweise.*/gi,
+    /,?\s+Näheres\s+folgt.*/gi,
   ];
-
-  // Find all row start positions: DD.MM.YYYY HH:MM - HH:MM
-  const rowRx = /(\d{2}\.\d{2}\.\d{4})\s+(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})/g;
-  const positions = [];
-  let m;
-  while ((m = rowRx.exec(text)) !== null) {
-    positions.push({ pos: m.index, date: m[1], timeStart: m[2], timeEnd: m[3], end: m.index + m[0].length });
-  }
+  const PLACEHOLDER_ORT = /^(Infos\s+folgen|genaue\s+Zeit\s+und\s+Ort\s+folgen)$/i;
 
   const results = [];
 
-  positions.forEach((row, i) => {
-    // Chunk: text between end of time range and start of next row
-    const chunkEnd = i + 1 < positions.length ? positions[i+1].pos : text.length;
-    let chunk = text.slice(row.end, chunkEnd).trim();
+  pages.forEach(items => {
+    // Drop footer/page-number text so it can never leak into the last row's window
+    const usable = items.filter(it => it.y0 > FOOTER_Y_GUARD);
 
-    // Find earliest category keyword NOT inside parentheses
-    // e.g. "Mittwoch (Meeting)" contains "Meeting" in parens — skip that match
-    let catIdx = chunk.length;
-    for (const cat of CATS) {
-      const rx = new RegExp(`(?<!\\()\\b${cat}\\b`);
-      const match = rx.exec(chunk);
-      if (match && match.index < catIdx) catIdx = match.index;
-    }
+    // Datum and Uhrzeit are separate items — pair them up by matching y0
+    const datumItems = usable.filter(it =>
+      it.x0 >= DATUM_MIN && it.x0 < DATUM_MAX && /^\d{2}\.\d{2}\.\d{4}$/.test(it.str));
+    const uhrzeitItems = usable.filter(it =>
+      it.x0 >= UHRZEIT_MIN && it.x0 < UHRZEIT_MAX && /^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(it.str));
 
-    // Everything before the category: Ort + Thema
-    let raw = chunk.slice(0, catIdx).trim();
+    const dateRows = [];
+    datumItems.forEach(di => {
+      const ti = uhrzeitItems.find(t => Math.abs(t.y0 - di.y0) < 1.5);
+      if (!ti) return;
+      const tm = ti.str.match(/^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})$/);
+      if (!tm) return;
+      dateRows.push({ y0: di.y0, date: di.str, timeStart: tm[1], timeEnd: tm[2] });
+    });
+    dateRows.sort((a, b) => b.y0 - a.y0); // top → bottom
 
-    // 1. Strip location (Ort column — before the title) — capture what's removed
-    let locParts = [];
-    for (const rx of STRIP_ORT) {
-      raw = raw.replace(rx, (match) => { locParts.push(match.trim()); return ' '; });
-    }
-    const loc = locParts.join(', ').replace(/\s{2,}/g, ' ').trim();
+    dateRows.forEach((row, i) => {
+      const yTop = row.y0 + 0.5;
+      const yBottom = i + 1 < dateRows.length ? dateRows[i+1].y0 : 0;
 
-    // 2. Strip trailing notes (after the title)
-    for (const rx of STRIP_NOTES) raw = raw.replace(rx, '');
+      const inWindow = usable.filter(it => it.y0 <= yTop && it.y0 > yBottom);
 
-    // Clean up punctuation and extra whitespace
-    let title = raw
-      .replace(/[-,;]\s*$/, '')   // trailing punctuation
-      .replace(/^\s*[-,;]\s*/, '') // leading punctuation
-      .replace(/\s{2,}/g, ' ')
-      .trim();
+      const ortParts = inWindow
+        .filter(it => it.x0 >= ORT_MIN && it.x0 < ORT_MAX)
+        .sort((a,b) => b.y0 - a.y0).map(it => it.str);
+      const themaParts = inWindow
+        .filter(it => it.x0 >= THEMA_MIN && it.x0 < THEMA_MAX)
+        .sort((a,b) => b.y0 - a.y0).map(it => it.str);
 
-    // Skip if empty or too short
-    if (!title || title.length < 2) return;
+      let loc = ortParts.join(' ').replace(/\s{2,}/g, ' ').trim();
+      let title = themaParts.join(' ').replace(/\s{2,}/g, ' ').trim();
 
-    const d = parseDate(row.date);
-    if (d) results.push({
-      title, ...d,
-      timeStart: row.timeStart,
-      timeEnd: row.timeEnd,
-      time: `${row.timeStart} – ${row.timeEnd}`,
-      loc
+      for (const rx of STRIP_NOTES) title = title.replace(rx, '');
+      title = title.replace(/[-,;]\s*$/, '').trim();
+
+      if (PLACEHOLDER_ORT.test(loc)) loc = '';
+
+      if (!title) return;
+      const d = parseDate(row.date);
+      if (!d) return;
+
+      results.push({
+        title, ...d,
+        timeStart: row.timeStart,
+        timeEnd: row.timeEnd,
+        time: `${row.timeStart} – ${row.timeEnd}`,
+        loc
+      });
     });
   });
 
@@ -1261,16 +1263,29 @@ async function openPDFImport(file, mode) {
   try {
     body.innerHTML = '<div class="parsing-spinner">PDF wird gelesen…</div>';
     const rawText = await extractPDFText(file);
-    let parsed = mode === 'birthdays' ? extractBirthdays(rawText) : extractEvents(rawText);
+    let parsed;
 
-    // For member list PDFs: also extract photos
-    if (mode === 'birthdays' && rawText.includes('Geburts-Datum')) {
-      body.innerHTML = '<div class="parsing-spinner">Fotos werden extrahiert…</div>';
-      try {
-        const pdfDoc = await loadPDFDoc(file);
-        parsed = await extractPhotosFromPDF(pdfDoc, parsed);
-      } catch(photoErr) {
-        console.warn('Photo extraction failed:', photoErr);
+    if (mode === 'birthdays') {
+      parsed = extractBirthdays(rawText);
+      // For member list PDFs: also extract photos
+      if (rawText.includes('Geburts-Datum')) {
+        body.innerHTML = '<div class="parsing-spinner">Fotos werden extrahiert…</div>';
+        try {
+          const pdfDoc = await loadPDFDoc(file);
+          parsed = await extractPhotosFromPDF(pdfDoc, parsed);
+        } catch(photoErr) {
+          console.warn('Photo extraction failed:', photoErr);
+        }
+      }
+    } else {
+      // mode === 'events'
+      if (rawText.includes('Termin-Übersicht') || rawText.includes('Datum Uhrzeit Ort Thema')) {
+        // MyRotary format → use precise column/position-based parser
+        body.innerHTML = '<div class="parsing-spinner">Termine werden zugeordnet…</div>';
+        const pagesItems = await extractPDFItemsByPage(file);
+        parsed = parseRotaryTerminPDFColumns(pagesItems);
+      } else {
+        parsed = extractEventsGeneric(rawText);
       }
     }
 
@@ -1334,6 +1349,7 @@ function renderModalContent(rawText, parsed, mode) {
                 <th class="col-date">Datum</th>
                 <th class="col-time">Uhrzeit</th>
                 <th>Veranstaltungsname</th>
+                <th>Thema</th>
                 <th class="col-del"></th>
               </tr>
             </thead>
@@ -1356,6 +1372,7 @@ function eventRowHTML(e, i) {
   const dateStr = `${String(e.day).padStart(2,'0')}.${String(e.month).padStart(2,'0')}.${e.year||now.getFullYear()}`;
   const timeStr = e.time || (e.timeStart ? `${e.timeStart} – ${e.timeEnd}` : '');
   const loc = (e.loc || '').replace(/"/g, '&quot;');
+  const thema = (e.thema !== undefined ? e.thema : e.title) || '';
   rowCounter = Math.max(rowCounter, i + 1);
   return `<tr id="erow-${i}" data-loc="${loc}">
     <td style="text-align:center;color:var(--muted);font-size:11px">${i+1}</td>
@@ -1365,6 +1382,7 @@ function eventRowHTML(e, i) {
       <input class="et-input" value="${e.title}" placeholder="Veranstaltungsname" id="etitle-${i}" style="min-width:160px"/>
       ${loc ? `<div style="font-size:10.5px;color:var(--muted);padding:2px 6px 0">📍 ${loc}</div>` : ''}
     </td>
+    <td><input class="et-input" value="${thema}" placeholder="Thema" id="ethema-${i}" style="min-width:160px"/></td>
     <td><button class="et-del" onclick="deleteEventRow(${i})" title="Zeile löschen">✕</button></td>
   </tr>`;
 }
@@ -1380,6 +1398,7 @@ function addEventRow() {
     <td><input class="et-input" value="" placeholder="TT.MM.JJJJ" id="edate-${i}"/></td>
     <td><input class="et-input" value="" placeholder="19:00" id="etime-${i}"/></td>
     <td><input class="et-input" value="" placeholder="Veranstaltungsname" id="etitle-${i}" style="min-width:160px"/></td>
+    <td><input class="et-input" value="" placeholder="Thema" id="ethema-${i}" style="min-width:160px"/></td>
     <td><button class="et-del" onclick="deleteEventRow(${i})" title="Zeile löschen">✕</button></td>`;
   tbody.appendChild(row);
   row.querySelector('.et-input').focus();
@@ -1439,11 +1458,12 @@ function confirmImport() {
       const dateV = document.getElementById('edate-'+id)?.value.trim()  || '';
       const timeV = document.getElementById('etime-'+id)?.value.trim()  || '';
       const title = document.getElementById('etitle-'+id)?.value.trim() || '';
+      const thema = document.getElementById('ethema-'+id)?.value.trim() || '';
       const loc   = row.dataset.loc || '';
       if (!title) return;
       const d = parseDate(dateV);
-      if (d) confirmed.push({ title, ...d, time: timeV, loc });
-      else if (title) confirmed.push({ title, day:1, month:1, year:now.getFullYear(), time:timeV, loc });
+      if (d) confirmed.push({ title, thema, ...d, time: timeV, loc });
+      else if (title) confirmed.push({ title, thema, day:1, month:1, year:now.getFullYear(), time:timeV, loc });
     });
     if (!confirmed.length) { toast('Keine Termine eingetragen'); return; }
     data.events = confirmed.sort((a,b) => new Date(a.year,a.month-1,a.day) - new Date(b.year,b.month-1,b.day));
@@ -1568,6 +1588,7 @@ function renderEvents(list) {
     upcoming.forEach(e => {
       const isNext = upcoming[0] === e;
       const meta = [e.time, e.loc ? `📍 ${e.loc}` : ''].filter(Boolean).join('  ·  ');
+      const thema = (e.thema && e.thema !== e.title) ? e.thema : '';
       html += `<div class="event-item ${isNext?'upcoming':''}">
         <div class="event-date-block">
           <div class="eday">${e.day}</div>
@@ -1575,6 +1596,7 @@ function renderEvents(list) {
         </div>
         <div class="event-info">
           <div class="event-title">${e.title}</div>
+          ${thema ? `<div class="event-thema">📌 Thema: ${thema}</div>` : ''}
           <div class="event-meta">${meta}</div>
         </div>
       </div>`;
@@ -1584,6 +1606,7 @@ function renderEvents(list) {
     html += `<div class="data-section-label" style="margin-top:8px;opacity:.5">Vergangene Termine</div>`;
     past.slice(-3).forEach(e => {
       const meta = [e.time, e.loc ? `📍 ${e.loc}` : ''].filter(Boolean).join('  ·  ');
+      const thema = (e.thema && e.thema !== e.title) ? e.thema : '';
       html += `<div class="event-item" style="opacity:.5">
         <div class="event-date-block" style="background:var(--muted)">
           <div class="eday">${e.day}</div>
@@ -1591,6 +1614,7 @@ function renderEvents(list) {
         </div>
         <div class="event-info">
           <div class="event-title">${e.title}</div>
+          ${thema ? `<div class="event-thema">📌 Thema: ${thema}</div>` : ''}
           <div class="event-meta">${meta}</div>
         </div>
       </div>`;
