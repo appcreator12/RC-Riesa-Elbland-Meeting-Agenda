@@ -359,51 +359,60 @@ body.edit-mode #title-upload-zone { display: flex; }
   pointer-events: none; z-index: 1;
 }
 
-/* Editable content */
-.editable-content {
-  font-size: clamp(16px, 1.9vw, 26px);
-  line-height: 1.7; color: var(--text);
-  min-height: 40px;
-  outline: none;
-  white-space: pre-wrap;
+/* ── FREE-POSITION IMAGES ────────────────────── */
+.free-img-layer {
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 12;
 }
-.editable-content:empty::before {
-  content: attr(data-placeholder);
-  color: #C5CEDF; font-style: italic;
+.fi-item {
+  position: absolute;
+  cursor: move;
+  user-select: none;
+  pointer-events: auto;
+}
+.fi-item img {
+  width: 100%; height: 100%;
+  object-fit: contain; display: block;
+  border-radius: 4px;
+  box-shadow: 0 3px 14px rgba(0,0,0,.25);
   pointer-events: none;
 }
-
-/* Attachments */
-.attachments {
-  padding: 8px clamp(16px, 2.5vw, 28px) 10px;
-  display: flex; flex-wrap: wrap; gap: 6px;
-  border-top: 1px solid var(--light);
+.fi-controls {
+  display: none;
+  position: absolute; top: -12px; right: -12px;
 }
-.attach-chip {
-  display: inline-flex; align-items: center; gap: 5px;
-  background: var(--offwht); border: 1px solid var(--light);
-  border-radius: 20px; padding: 3px 10px 3px 8px;
-  font-size: 11px; color: var(--blue); cursor: pointer;
-  transition: background .15s;
+body.edit-mode .fi-item:hover .fi-controls,
+body.edit-mode .fi-item.active .fi-controls { display: block; }
+.fi-del {
+  position: absolute; top: 0; right: 0;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: #c0392b; color: white; border: none;
+  font-size: 11px; cursor: pointer; line-height: 22px;
+  text-align: center; padding: 0;
 }
-.attach-chip:hover { background: var(--light); }
-.attach-chip svg { width: 12px; height: 12px; }
-.attach-chip .del { color: var(--muted); margin-left: 2px; }
-.attach-chip .del:hover { color: #c0392b; }
-
-/* File upload zone */
-.upload-zone {
-  border: 2px dashed var(--light);
-  border-radius: 8px;
-  padding: 14px;
-  text-align: center;
-  font-size: 11px; color: var(--muted);
-  cursor: pointer;
-  transition: border-color .2s, background .2s;
-  margin: 0 clamp(16px, 2.5vw, 28px) 12px;
+.fi-handle {
+  position: absolute; bottom: -8px; right: -8px;
+  width: 16px; height: 16px;
+  background: var(--gold); border-radius: 3px;
+  cursor: se-resize; border: 2px solid white;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
 }
-.upload-zone:hover, .upload-zone.drag { border-color: var(--gold); background: #FFFBF0; color: var(--blue); }
-.upload-zone svg { width: 20px; height: 20px; margin: 0 auto 4px; display: block; }
+body.edit-mode .fi-item { outline: 2px solid transparent; }
+body.edit-mode .fi-item:hover { outline-color: rgba(247,168,27,.6); }
+.fi-add-btn {
+  position: absolute; bottom: 14px; right: 14px;
+  display: none; align-items: center; gap: 6px;
+  background: var(--blue); color: white;
+  border: none; border-radius: 20px;
+  padding: 7px 14px; font-size: 12px; font-weight: 500;
+  font-family: 'DM Sans', sans-serif;
+  cursor: pointer; pointer-events: auto;
+  box-shadow: 0 2px 10px rgba(0,63,135,.4);
+  transition: background .2s, transform .15s;
+  z-index: 15;
+}
+.fi-add-btn:hover { background: var(--blue2); transform: scale(1.04); }
+body.edit-mode .fi-add-btn { display: flex; }
 
 /* Edit mode highlights */
 body.edit-mode .editable-content {
@@ -416,8 +425,6 @@ body.edit-mode .editable-content:focus {
   background: rgba(247,168,27,.04);
   box-shadow: 0 0 0 3px rgba(247,168,27,.12);
 }
-body.edit-mode .upload-zone { display: block; }
-body:not(.edit-mode) .upload-zone { display: none; }
 body:not(.edit-mode) .attachments:empty { display: none; }
 
 /* ── NOTIFICATIONS ───────────────────────── */
@@ -821,11 +828,10 @@ body.edit-mode .csv-import-btn { display: flex; }
 // ── AGENDA ───────────────────────────────────────────────────
 const AGENDA = [
   { id:"begruess", num:"01", title:"Begrüßung",                        sub:"Willkommen & Eröffnung der Sitzung",    type:"normal" },
-  { id:"agenda",   num:"02", title:"Agenda",                            sub:"Tagesordnung im Überblick",             type:"normal" },
-  { id:"geburts",  num:"03", title:"Geburtstage",                       sub:"Glückwünsche & Jubiläen",               type:"birthdays" },
-  { id:"themen",   num:"04", title:"Themen der Sitzung",                sub:"Diskussion & Beschlüsse",               type:"normal" },
-  { id:"status",   num:"05", title:"Status Projekte & Veranstaltungen", sub:"Aktueller Sachstand & Updates",         type:"normal" },
-  { id:"termine",  num:"06", title:"Terminvorschau",                    sub:"Kommende Veranstaltungen & Termine",    type:"events" },
+  { id:"geburts",  num:"02", title:"Geburtstage",                       sub:"Glückwünsche & Jubiläen",               type:"birthdays" },
+  { id:"themen",   num:"03", title:"Themen der Sitzung",                sub:"Diskussion & Beschlüsse",               type:"normal" },
+  { id:"status",   num:"04", title:"Status Projekte & Veranstaltungen", sub:"Aktueller Sachstand & Updates",         type:"normal" },
+  { id:"termine",  num:"05", title:"Terminvorschau",                    sub:"Kommende Veranstaltungen & Termine",    type:"events" },
 ];
 
 // ── WHEEL / LOGO ──────────────────────────────────────────────
@@ -890,9 +896,9 @@ function saveData() {
     toast('Gespeichert ✓');
   } catch {
     const slim = {};
-    Object.keys(data).forEach(k=>{ if(!k.startsWith('file_')&&k!=='titleImage') slim[k]=data[k]; });
+    Object.keys(data).forEach(k=>{ if(!k.startsWith('file_')&&k!=='titleImage'&&!k.startsWith('img_')) slim[k]=data[k]; });
     localStorage.setItem(LS_KEY, JSON.stringify(slim));
-    toast('Gespeichert (Bilder zu groß für Browser-Speicher)');
+    toast('Gespeichert (Bilder zu groß — nur Text gespeichert)');
   }
 }
 function exportData() {
@@ -1649,18 +1655,18 @@ function renderEvents(list) {
 
   let html = '';
 
-  // Upcoming events — next is gold-highlighted
+  // 1 past event at TOP — grayed out
+  if (past.length) {
+    html += `<div class="data-section-label" style="opacity:.5">Zuletzt vergangen</div>`;
+    html += eventCard(past[0], '', 'style="opacity:.45"');
+  }
+
+  // Upcoming events below — next is gold-highlighted
   if (upcoming.length) {
-    html += `<div class="data-section-label">Kommende Termine</div>`;
+    html += `<div class="data-section-label"${past.length ? ' style="margin-top:8px"' : ''}>Kommende Termine</div>`;
     upcoming.forEach((e, i) => {
       html += eventCard(e, i === 0 ? 'upcoming' : '');
     });
-  }
-
-  // Max 1 past event — grayed out, below upcoming
-  if (past.length) {
-    html += `<div class="data-section-label" style="margin-top:8px;opacity:.5">Zuletzt vergangen</div>`;
-    html += eventCard(past[0], '', 'style="opacity:.45"');
   }
 
   return html;
@@ -1673,62 +1679,40 @@ function buildSlides() {
   const container = document.getElementById('slides');
   container.innerHTML = '';
 
-  // SLIDE 0 — Title (top: navy text | bottom: photo panel)
+  // SLIDE 0 — Title
   const s0 = document.createElement('div');
   s0.className = 'slide'; s0.id = 'slide-0';
   const savedImg = data.titleImage || '';
-
   s0.innerHTML = `
-    <!-- TOP: Navy section with text -->
-    <div class="title-top">
-      <div class="bg-wheel">${wheelSvg('white','100%')}</div>
-      <div class="title-top-bar">
-        <img src="${CLUB_BADGE}" alt="RC Riesa-Elbland"
-             style="height:clamp(64px,10vh,120px);width:auto;filter:drop-shadow(0 1px 4px rgba(0,0,0,.18))"/>
-      </div>
-      <div class="title-content">
-        <div class="title-accent-line"></div>
-        <div class="title-eyebrow">Rotary Club · Riesa-Elbland</div>
-        <div class="title-main">Vereins&shy;sitzung</div>
-        <div class="title-divider"></div>
-        <div class="title-date-row">
-          <div class="title-date-pill">${TODAY}</div>
-        </div>
-        <div class="title-slogan">"Rotary lässt Kinderaugen leuchten"</div>
+    <div id="title-img-bg" class="${savedImg?'has-image':'no-image'}"
+         style="${savedImg?`background-image:url('${savedImg}')`:''}"></div>
+    <div class="bg-wheel">${wheelSvg('white','100%')}</div>
+    <div id="title-upload-zone" onclick="triggerTitleUpload()">
+      <div class="img-change-badge">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+          <circle cx="12" cy="13" r="4"/>
+        </svg>
+        ${savedImg?'Bild austauschen':'Bild hinzufügen'}
+        <span style="font-size:11px;opacity:.6;font-weight:400">JPG · PNG · WEBP</span>
       </div>
     </div>
-
-    <!-- GOLD DIVIDER -->
-    <div class="title-divider-bar"></div>
-
-    <!-- BOTTOM: Photo panel -->
-    <div class="title-img-bottom">
-      ${savedImg
-        ? `<div class="img-fill" style="background-image:url('${savedImg}')"></div>`
-        : `<div class="img-placeholder">
-             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-               <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
-               <circle cx="12" cy="13" r="4"/>
-             </svg>
-             <span>Bild hinzufügen</span>
-             <span style="font-size:.8em;opacity:.6">Bearbeitungsmodus (E) → hier klicken</span>
-           </div>`
-      }
-      <!-- Upload zone (edit mode only) -->
-      <div id="title-upload-zone" onclick="triggerTitleUpload()">
-        <div class="img-change-badge">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
-            <circle cx="12" cy="13" r="4"/>
-          </svg>
-          ${savedImg ? 'Bild austauschen' : 'Bild hinzufügen'}
-          <span style="font-size:11px;opacity:.6;font-weight:400">JPG · PNG · WEBP</span>
-        </div>
-      </div>
-    </div>
-
     <input type="file" id="title-file-input" accept="image/*" style="display:none"
-           onchange="handleTitleImage(event)"/>`;
+           onchange="handleTitleImage(event)"/>
+    <div class="title-top-bar">
+      <img src="${CLUB_BADGE}" alt="RC Riesa-Elbland"
+           style="height:clamp(64px,10vh,120px);width:auto;filter:drop-shadow(0 1px 4px rgba(0,0,0,.18))"/>
+    </div>
+    <div class="title-content">
+      <div class="title-accent-line"></div>
+      <div class="title-eyebrow">Rotary Club · Riesa-Elbland</div>
+      <div class="title-main">Vereins&shy;sitzung</div>
+      <div class="title-divider"></div>
+      <div class="title-date-row">
+        <div class="title-date-pill">${TODAY}</div>
+      </div>
+      <div class="title-slogan">"Rotary lässt Kinderaugen leuchten"</div>
+    </div>`;
   container.appendChild(s0);
 
   // SLIDE 1 — Agenda overview
@@ -1753,8 +1737,8 @@ function buildSlides() {
     <div class="slide-footer">RC Riesa-Elbland</div>`;
   container.appendChild(s1);
 
-  // SLIDES 2–7 — Content (normal, birthdays, events)
-  AGENDA.forEach((a,i) => {
+  // SLIDES 2+ — Content slides
+  AGENDA.forEach((a, i) => {
     const s = document.createElement('div');
     s.className = 'slide content-slide'; s.id = `slide-${i+2}`;
 
@@ -1773,16 +1757,11 @@ function buildSlides() {
           <div class="data-header-row">
             <div class="cs-subtitle">${a.sub}</div>
             <button class="csv-import-btn" onclick="document.getElementById('pdf-bday').click()">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-              </svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               PDF importieren
             </button>
             <button class="csv-import-btn" style="background:#c0392b" onclick="clearBirthdays()">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-              </svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
               Daten löschen
             </button>
             <input type="file" id="pdf-bday" accept=".pdf" style="display:none"
@@ -1803,10 +1782,7 @@ function buildSlides() {
           <div class="data-header-row">
             <div class="cs-subtitle">${a.sub}</div>
             <button class="csv-import-btn" onclick="document.getElementById('pdf-events').click()">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-                <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-              </svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               PDF importieren
             </button>
             <input type="file" id="pdf-events" accept=".pdf" style="display:none"
@@ -1823,36 +1799,9 @@ function buildSlides() {
 
     } else {
       const savedContent = data['content_'+a.id] || '';
-      const savedFiles   = data['files_'+a.id]   || [];
-      const emailSectionHTML = a.id === 'themen' ? `
-        <div class="email-summary-section">
-          <div class="email-summary-header">
-            <span class="email-summary-title">📧 E-Mail-Zusammenfassungen</span>
-            <div class="email-input-controls">
-              <button class="csv-import-btn" onclick="document.getElementById('email-file-input').click()">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                .eml hochladen
-              </button>
-              <button class="csv-import-btn" onclick="toggleEmailPaste()">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                Text einfügen
-              </button>
-              <input type="file" id="email-file-input" accept=".eml,message/rfc822" style="display:none" onchange="handleEmailFile(event)"/>
-            </div>
-          </div>
-          <div id="email-paste-area" style="display:none">
-            <textarea id="email-paste-text" class="manual-entry-area" style="width:100%;min-height:110px;margin-top:8px" placeholder="E-Mail-Text hier einfügen …"></textarea>
-            <div style="display:flex;gap:8px;margin-top:6px">
-              <input type="text" id="email-paste-subject" class="et-input" placeholder="Betreff (optional)" style="flex:1;border:1px solid var(--light);border-radius:6px;padding:6px 10px"/>
-              <button class="modal-btn primary" onclick="summarizePastedEmail()">Zusammenfassen</button>
-            </div>
-          </div>
-          <div id="email-summary-list">${renderEmailSummaries(data.emailSummaries)}</div>
-        </div>` : '';
       s.innerHTML = `${hdrHTML}
         <div class="cs-body">
           <div class="cs-subtitle">${a.sub}</div>
-          ${emailSectionHTML}
           <div class="cs-card">
             <div class="cs-card-inner">
               <div class="editable-content" id="content-${a.id}"
@@ -1861,25 +1810,10 @@ function buildSlides() {
               >${savedContent}</div>
             </div>
             <div class="cs-watermark">${wheelSvg('currentColor','100%')}</div>
-            <div class="attachments" id="attach-${a.id}">
-              ${savedFiles.map(f=>chipHTML(a.id,f.name,f.data)).join('')}
-            </div>
           </div>
-          <div class="upload-zone" id="zone-${a.id}"
-            onclick="triggerUpload('${a.id}')"
-            ondragover="event.preventDefault();this.classList.add('drag')"
-            ondragleave="this.classList.remove('drag')"
-            ondrop="handleDrop(event,'${a.id}')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
-              <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
-            </svg>
-            Datei hier ablegen oder klicken zum Hochladen
-          </div>
-          <input type="file" id="file-${a.id}" style="display:none" multiple
-                 onchange="handleFileInput(event,'${a.id}')"/>
         </div>
-        <div class="slide-footer">RC Riesa-Elbland</div>`;
+        <div class="slide-footer">RC Riesa-Elbland</div>
+        ${buildFImgLayer(a.id)}`;
     }
     container.appendChild(s);
   });
@@ -1930,247 +1864,151 @@ function toggleEdit() {
   toast(editMode ? '✏️ Bearbeitungsmodus aktiv' : 'Gespeichert ✓');
 }
 
-// ── FILE ATTACHMENTS ─────────────────────────────────────────
-function chipHTML(agendaId, fileName, dataUrl) {
-  const safe = fileName.replace(/'/g,"\\'");
-  return `<span class="attach-chip" data-file="${fileName}">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
-      <polyline points="14 2 14 8 20 8"/>
-    </svg>
-    <span onclick="openFile('${agendaId}','${safe}')" style="cursor:pointer">${fileName}</span>
-    <span class="del" onclick="removeFile('${agendaId}','${safe}',this)">✕</span>
-  </span>`;
-}
-function triggerUpload(id) { document.getElementById('file-'+id).click(); }
-function handleFileInput(e,id) { [...e.target.files].forEach(f=>addFile(id,f)); }
-function handleDrop(e,id) {
-  e.preventDefault(); document.getElementById('zone-'+id).classList.remove('drag');
-  [...e.dataTransfer.files].forEach(f=>addFile(id,f));
-}
-function addFile(agendaId, file) {
-  const reader = new FileReader();
-  reader.onload = e => {
-    if (!data['files_'+agendaId]) data['files_'+agendaId] = [];
-    data['files_'+agendaId].push({ name: file.name, data: e.target.result });
-    document.getElementById('attach-'+agendaId)
-      ?.insertAdjacentHTML('beforeend', chipHTML(agendaId, file.name, e.target.result));
-    saveData(); toast(`✓ ${file.name} gespeichert`);
-  };
-  reader.readAsDataURL(file);
-}
-function removeFile(agendaId, fileName, el) {
-  el.closest('.attach-chip').remove();
-  if (data['files_'+agendaId])
-    data['files_'+agendaId] = data['files_'+agendaId].filter(f=>f.name!==fileName);
-  saveData();
-}
-function openFile(agendaId, fileName) {
-  const f = data['files_'+agendaId]?.find(f=>f.name===fileName);
-  if (f) { const a=document.createElement('a'); a.href=f.data; a.download=f.name; a.click(); }
+// ── FREE-POSITION IMAGES (multiple per slide, drag + resize) ──
+let _drag = null; // active drag/resize state
+
+function getFImgs(id)       { return data['fimgs_'+id] || []; }
+function setFImgs(id, imgs) { data['fimgs_'+id] = imgs; saveData(); }
+
+// Build the floating image layer HTML for one slide
+function buildFImgLayer(agendaId) {
+  const imgs = getFImgs(agendaId);
+  const items = imgs.map((img, idx) => `
+    <div class="fi-item" id="fi-${agendaId}-${idx}"
+      style="left:${img.x.toFixed(2)}%;top:${img.y.toFixed(2)}%;width:${img.w.toFixed(2)}%;height:${img.h.toFixed(2)}%">
+      <img src="${img.src}" draggable="false" alt=""/>
+      <div class="fi-controls">
+        <button class="fi-del" onclick="deleteFImg('${agendaId}',${idx});event.stopPropagation()">✕</button>
+        <div class="fi-handle" onmousedown="fiStartResize(event,'${agendaId}',${idx})" ontouchstart="fiStartResizeT(event,'${agendaId}',${idx})"></div>
+      </div>
+    </div>`).join('');
+
+  return `<div class="free-img-layer" id="fil-${agendaId}">
+    ${items}
+    <button class="fi-add-btn" onclick="fImgAdd('${agendaId}')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13">
+        <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      Bild hinzufügen
+    </button>
+    <input type="file" id="fimginput-${agendaId}" accept="image/*" multiple
+           style="display:none" onchange="fImgFiles(event,'${agendaId}')"/>
+  </div>`;
 }
 
-// ── EMAIL SUMMARIZATION (.eml upload + paste) ─────────────────
-function decodeBase64ToText(b64, charset) {
-  try {
-    const binary = atob(b64.replace(/\s+/g, ''));
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return new TextDecoder(charset || 'utf-8').decode(bytes);
-  } catch { return ''; }
+function refreshFImgLayer(agendaId) {
+  const el = document.getElementById('fil-'+agendaId);
+  if (el) el.outerHTML = buildFImgLayer(agendaId);
 }
 
-function decodeQuotedPrintable(str, charset) {
-  str = str.replace(/=\r?\n/g, ''); // remove soft line breaks
-  const bytes = [];
-  for (let i = 0; i < str.length; i++) {
-    if (str[i] === '=' && /^[A-Fa-f0-9]{2}$/.test(str.substr(i+1, 2))) {
-      bytes.push(parseInt(str.substr(i+1, 2), 16));
-      i += 2;
-    } else {
-      bytes.push(str.charCodeAt(i) & 0xff);
-    }
-  }
-  try { return new TextDecoder(charset || 'utf-8').decode(new Uint8Array(bytes)); }
-  catch { return new TextDecoder('utf-8').decode(new Uint8Array(bytes)); }
-}
-
-function decodeRFC2047(str) {
-  if (!str) return '';
-  // Join adjacent encoded-words separated only by whitespace (per RFC 2047)
-  str = str.replace(/\?=\s+=\?/g, '?==?');
-  return str.replace(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g, (m, charset, enc, text) => {
-    try {
-      if (enc.toUpperCase() === 'B') return decodeBase64ToText(text, charset);
-      const qp = text.replace(/_/g, ' ');
-      return decodeQuotedPrintable(qp, charset);
-    } catch { return text; }
-  });
-}
-
-function stripHtmlToText(html) {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/(p|div|tr|li|h[1-6])>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-    .replace(/[ \t]{2,}/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-function parseHeaderBlock(block) {
-  const unfolded = block.replace(/\n[ \t]+/g, ' '); // unfold continuation lines
-  const headers = {};
-  unfolded.split('\n').forEach(line => {
-    const idx = line.indexOf(':');
-    if (idx > 0) headers[line.slice(0, idx).trim().toLowerCase()] = line.slice(idx+1).trim();
-  });
-  return headers;
-}
-
-function decodePart(body, cte) {
-  cte = (cte || '').toLowerCase();
-  if (cte.includes('base64')) return decodeBase64ToText(body);
-  if (cte.includes('quoted-printable')) return decodeQuotedPrintable(body);
-  return body;
-}
-
-// Parse a raw .eml string into { subject, from, date, bodyText }
-function parseEML(raw) {
-  raw = raw.replace(/\r\n/g, '\n');
-  const sepIdx = raw.indexOf('\n\n');
-  const headerBlock = sepIdx >= 0 ? raw.slice(0, sepIdx) : raw;
-  const body = sepIdx >= 0 ? raw.slice(sepIdx + 2) : '';
-
-  const headers = parseHeaderBlock(headerBlock);
-  const subject = decodeRFC2047(headers['subject'] || '');
-  const from = decodeRFC2047(headers['from'] || '');
-  const date = headers['date'] || '';
-  const contentType = headers['content-type'] || '';
-  const cte = headers['content-transfer-encoding'] || '';
-
-  let bodyText = '';
-  const boundaryMatch = contentType.match(/boundary="?([^";]+)"?/i);
-
-  if (boundaryMatch) {
-    const boundary = boundaryMatch[1];
-    const rawParts = body.split('--' + boundary);
-    const parts = rawParts.slice(1, rawParts.length - 1); // drop preamble/epilogue
-    let plainPart = null, htmlPart = null;
-
-    parts.forEach(part => {
-      const pSep = part.indexOf('\n\n');
-      if (pSep < 0) return;
-      const pHeaders = parseHeaderBlock(part.slice(0, pSep));
-      const pBody = part.slice(pSep + 2);
-      const pCT = (pHeaders['content-type'] || '').toLowerCase();
-      const decoded = decodePart(pBody, pHeaders['content-transfer-encoding']);
-      if (pCT.includes('text/plain') && plainPart === null) plainPart = decoded;
-      else if (pCT.includes('text/html') && htmlPart === null) htmlPart = decoded;
-    });
-
-    bodyText = plainPart !== null ? plainPart : (htmlPart !== null ? stripHtmlToText(htmlPart) : '');
-  } else {
-    const decoded = decodePart(body, cte);
-    bodyText = contentType.toLowerCase().includes('text/html') ? stripHtmlToText(decoded) : decoded;
-  }
-
-  bodyText = bodyText.replace(/\n{3,}/g, '\n\n').trim();
-  return { subject, from, date, bodyText };
-}
-
-// ── UI WIRING ──────────────────────────────────────────────────
-function toggleEmailPaste() {
-  const el = document.getElementById('email-paste-area');
-  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
-}
-
-async function handleEmailFile(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  try {
-    const raw = await file.text();
-    const parsed = parseEML(raw);
-    if (!parsed.bodyText) { toast('⚠️ Konnte keinen Text aus der .eml-Datei lesen'); return; }
-    await summarizeEmail(parsed.subject, parsed.from, parsed.bodyText);
-  } catch(e) {
-    toast('Fehler beim Lesen der Datei: ' + e.message);
-  }
+// Add image(s)
+function fImgAdd(id) { document.getElementById('fimginput-'+id).click(); }
+function fImgFiles(event, id) {
+  [...event.target.files].forEach(file => compressAndAddFImg(id, file));
   event.target.value = '';
 }
 
-async function summarizePastedEmail() {
-  const text = document.getElementById('email-paste-text')?.value.trim() || '';
-  const subject = document.getElementById('email-paste-subject')?.value.trim() || '';
-  if (!text) { toast('Bitte zuerst E-Mail-Text einfügen'); return; }
-  await summarizeEmail(subject, '', text);
-  const ta = document.getElementById('email-paste-text');
-  const su = document.getElementById('email-paste-subject');
-  if (ta) ta.value = '';
-  if (su) su.value = '';
+function compressAndAddFImg(id, file) {
+  const imgEl = new Image(), url = URL.createObjectURL(file);
+  imgEl.onload = () => {
+    const MAX = 1600; let w = imgEl.width, h = imgEl.height;
+    if (w > MAX) { h = Math.round(h*MAX/w); w = MAX; }
+    const c = document.createElement('canvas'); c.width=w; c.height=h;
+    c.getContext('2d').drawImage(imgEl, 0, 0, w, h);
+    const src = c.toDataURL('image/jpeg', 0.82);
+    URL.revokeObjectURL(url);
+    const imgs = getFImgs(id);
+    const off  = imgs.length * 3;
+    imgs.push({ src, x: 5+off, y: 5+off, w: 38, h: 32 });
+    setFImgs(id, imgs);
+    refreshFImgLayer(id);
+    toast('Bild hinzugefügt ✓');
+  };
+  imgEl.src = url;
 }
 
-async function summarizeEmail(subject, from, bodyText) {
-  const listEl = document.getElementById('email-summary-list');
-  if (!listEl) return;
-  const loadingId = 'email-loading-' + Date.now();
-  listEl.insertAdjacentHTML('afterbegin', `<div class="email-loading" id="${loadingId}">Wird zusammengefasst…</div>`);
+function deleteFImg(id, idx) {
+  const imgs = getFImgs(id); imgs.splice(idx, 1);
+  setFImgs(id, imgs); refreshFImgLayer(id);
+}
 
-  try {
-    const resp = await fetch('/api/summarize', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: bodyText, subject, from })
-    });
-    let result;
-    try { result = await resp.json(); }
-    catch { result = { error: 'Unerwartete Server-Antwort' }; }
+// ── DRAG (move) ───────────────────────────────────────────────
+function fiStartDrag(e, id, idx) {
+  if (!editMode) return;
+  e.preventDefault(); e.stopPropagation();
+  const layer = document.getElementById('fil-'+id);
+  const item  = document.getElementById(`fi-${id}-${idx}`);
+  if (!layer||!item) return;
+  const lr = layer.getBoundingClientRect(), ir = item.getBoundingClientRect();
+  _drag = { type:'move', id, idx,
+    lw: lr.width, lh: lr.height,
+    cx: e.clientX||e.touches?.[0].clientX,
+    cy: e.clientY||e.touches?.[0].clientY,
+    ox: (ir.left-lr.left)/lr.width*100,
+    oy: (ir.top-lr.top)/lr.height*100,
+    ow: ir.width/lr.width*100, oh: ir.height/lr.height*100 };
+}
 
-    document.getElementById(loadingId)?.remove();
+// ── RESIZE ────────────────────────────────────────────────────
+function fiStartResize(e, id, idx) {
+  if (!editMode) return;
+  e.preventDefault(); e.stopPropagation();
+  const layer = document.getElementById('fil-'+id);
+  const item  = document.getElementById(`fi-${id}-${idx}`);
+  if (!layer||!item) return;
+  const lr = layer.getBoundingClientRect(), ir = item.getBoundingClientRect();
+  _drag = { type:'resize', id, idx,
+    lw: lr.width, lh: lr.height,
+    cx: e.clientX, cy: e.clientY,
+    ox: (ir.left-lr.left)/lr.width*100,
+    oy: (ir.top-lr.top)/lr.height*100,
+    ow: ir.width/lr.width*100, oh: ir.height/lr.height*100 };
+}
+function fiStartResizeT(e,id,idx){fiStartResize(e.touches[0]&&{clientX:e.touches[0].clientX,clientY:e.touches[0].clientY,preventDefault:()=>{},stopPropagation:()=>{}},id,idx);}
 
-    if (!resp.ok) {
-      toast('⚠️ ' + (result.error || 'Zusammenfassung fehlgeschlagen'));
-      return;
-    }
-
-    if (!data.emailSummaries) data.emailSummaries = [];
-    data.emailSummaries.unshift({
-      subject: subject || '(ohne Betreff)',
-      from: from || '',
-      summary: result.summary || ''
-    });
-    saveData();
-    listEl.innerHTML = renderEmailSummaries(data.emailSummaries);
-    toast('✓ Zusammenfassung hinzugefügt');
-  } catch(e) {
-    document.getElementById(loadingId)?.remove();
-    toast('⚠️ Server nicht erreichbar — funktioniert nur auf der deployten Vercel-Seite');
+// Global move + up
+document.addEventListener('mousemove', e => {
+  if (!_drag) return;
+  const item = document.getElementById(`fi-${_drag.id}-${_drag.idx}`);
+  if (!item) return;
+  const dx = (e.clientX - _drag.cx) / _drag.lw * 100;
+  const dy = (e.clientY - _drag.cy) / _drag.lh * 100;
+  if (_drag.type === 'move') {
+    item.style.left = Math.max(0, Math.min(85, _drag.ox + dx)).toFixed(2) + '%';
+    item.style.top  = Math.max(0, Math.min(85, _drag.oy + dy)).toFixed(2) + '%';
+  } else {
+    item.style.width  = Math.max(6, _drag.ow + dx).toFixed(2) + '%';
+    item.style.height = Math.max(6, _drag.oh + dy).toFixed(2) + '%';
   }
-}
-
-function renderEmailSummaries(list) {
-  if (!list || !list.length)
-    return `<div style="font-size:12px;color:var(--muted);padding:6px 0 2px">Noch keine E-Mail-Zusammenfassungen.</div>`;
-  return list.map((e, i) => `
-    <div class="email-card">
-      <button class="ec-del" onclick="removeEmailSummary(${i})" title="Entfernen">✕</button>
-      <div class="ec-subject">📧 ${e.subject}</div>
-      ${e.from ? `<div class="ec-from">von ${e.from}</div>` : ''}
-      <div class="ec-summary">${e.summary}</div>
-    </div>`).join('');
-}
-
-function removeEmailSummary(i) {
-  if (!data.emailSummaries) return;
-  data.emailSummaries.splice(i, 1);
-  saveData();
-  const listEl = document.getElementById('email-summary-list');
-  if (listEl) listEl.innerHTML = renderEmailSummaries(data.emailSummaries);
-}
+});
+document.addEventListener('mouseup', () => {
+  if (!_drag) return;
+  const { id, idx } = _drag;
+  const item  = document.getElementById(`fi-${id}-${idx}`);
+  const layer = document.getElementById(`fil-${id}`);
+  if (item && layer) {
+    const lr = layer.getBoundingClientRect(), ir = item.getBoundingClientRect();
+    const imgs = getFImgs(id);
+    if (imgs[idx]) {
+      imgs[idx].x = (ir.left-lr.left)/lr.width*100;
+      imgs[idx].y = (ir.top-lr.top)/lr.height*100;
+      imgs[idx].w = ir.width/lr.width*100;
+      imgs[idx].h = ir.height/lr.height*100;
+      setFImgs(id, imgs);
+    }
+  }
+  _drag = null;
+});
+document.addEventListener('touchmove', e => {
+  if (!_drag) return;
+  const t = e.touches[0];
+  const synth = { clientX: t.clientX, clientY: t.clientY };
+  document.dispatchEvent(new MouseEvent('mousemove', synth));
+}, { passive: true });
+document.addEventListener('touchend', () => {
+  if (_drag) document.dispatchEvent(new MouseEvent('mouseup'));
+});
 
 // ── TITLE IMAGE ───────────────────────────────────────────────
 function triggerTitleUpload() { document.getElementById('title-file-input').click(); }
