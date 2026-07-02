@@ -414,7 +414,46 @@ body.edit-mode .fi-item:hover { outline-color: rgba(247,168,27,.6); }
 .fi-add-btn:hover { background: var(--blue2); transform: scale(1.04); }
 body.edit-mode .fi-add-btn { display: flex; }
 
-/* Edit mode highlights */
+/* ── FORMAT TOOLBAR ──────────────────────────── */
+.format-toolbar {
+  display: none;
+  align-items: center; gap: 3px;
+  padding: 5px 8px;
+  background: var(--blue);
+  border-radius: 8px 8px 0 0;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+body.edit-mode .format-toolbar { display: flex; }
+.ft-btn {
+  height: 28px; min-width: 28px; padding: 0 7px;
+  border: none; border-radius: 5px;
+  background: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.85);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: background .15s;
+  display: flex; align-items: center; justify-content: center;
+}
+.ft-btn:hover { background: rgba(255,255,255,.28); }
+.ft-btn.active { background: var(--gold); color: var(--blue); }
+.ft-sep { width: 1px; height: 18px; background: rgba(255,255,255,.2); margin: 0 3px; }
+.ft-select {
+  height: 28px; padding: 0 6px;
+  border: none; border-radius: 5px;
+  background: rgba(255,255,255,.12);
+  color: rgba(255,255,255,.85);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px; cursor: pointer;
+  outline: none;
+}
+.ft-select option { background: var(--blue); color: white; }
+.ft-size-display {
+  color: rgba(255,255,255,.7); font-size: 11px;
+  min-width: 28px; text-align: center;
+}
+
+/* Editable content */
 body.edit-mode .editable-content {
   border: 1.5px dashed rgba(247,168,27,.5);
   border-radius: 4px; padding: 4px 6px;
@@ -1684,35 +1723,52 @@ function buildSlides() {
   s0.className = 'slide'; s0.id = 'slide-0';
   const savedImg = data.titleImage || '';
   s0.innerHTML = `
-    <div id="title-img-bg" class="${savedImg?'has-image':'no-image'}"
-         style="${savedImg?`background-image:url('${savedImg}')`:''}"></div>
-    <div class="bg-wheel">${wheelSvg('white','100%')}</div>
-    <div id="title-upload-zone" onclick="triggerTitleUpload()">
-      <div class="img-change-badge">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
-          <circle cx="12" cy="13" r="4"/>
-        </svg>
-        ${savedImg?'Bild austauschen':'Bild hinzufügen'}
-        <span style="font-size:11px;opacity:.6;font-weight:400">JPG · PNG · WEBP</span>
+    <!-- TOP: Navy text section -->
+    <div class="title-top">
+      <div class="bg-wheel">${wheelSvg('white','100%')}</div>
+      <div class="title-top-bar">
+        <img src="${CLUB_BADGE}" alt="RC Riesa-Elbland"
+             style="height:clamp(64px,10vh,120px);width:auto;filter:drop-shadow(0 1px 4px rgba(0,0,0,.18))"/>
+      </div>
+      <div class="title-content">
+        <div class="title-accent-line"></div>
+        <div class="title-eyebrow">Rotary Club · Riesa-Elbland</div>
+        <div class="title-main">Vereins&shy;sitzung</div>
+        <div class="title-divider"></div>
+        <div class="title-date-row">
+          <div class="title-date-pill">${TODAY}</div>
+        </div>
+        <div class="title-slogan">"Rotary lässt Kinderaugen leuchten"</div>
+      </div>
+    </div>
+    <!-- GOLD DIVIDER -->
+    <div class="title-divider-bar"></div>
+    <!-- BOTTOM: Photo panel -->
+    <div class="title-img-bottom">
+      ${savedImg
+        ? `<div class="img-fill" style="background-image:url('${savedImg}')"></div>`
+        : `<div class="img-placeholder">
+             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+               <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+               <circle cx="12" cy="13" r="4"/>
+             </svg>
+             <span>Bild hinzufügen</span>
+             <span style="font-size:.8em;opacity:.6">Bearbeitungsmodus (E) → hier klicken</span>
+           </div>`
+      }
+      <div id="title-upload-zone" onclick="triggerTitleUpload()">
+        <div class="img-change-badge">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+          ${savedImg ? 'Bild austauschen' : 'Bild hinzufügen'}
+          <span style="font-size:11px;opacity:.6;font-weight:400">JPG · PNG · WEBP</span>
+        </div>
       </div>
     </div>
     <input type="file" id="title-file-input" accept="image/*" style="display:none"
-           onchange="handleTitleImage(event)"/>
-    <div class="title-top-bar">
-      <img src="${CLUB_BADGE}" alt="RC Riesa-Elbland"
-           style="height:clamp(64px,10vh,120px);width:auto;filter:drop-shadow(0 1px 4px rgba(0,0,0,.18))"/>
-    </div>
-    <div class="title-content">
-      <div class="title-accent-line"></div>
-      <div class="title-eyebrow">Rotary Club · Riesa-Elbland</div>
-      <div class="title-main">Vereins&shy;sitzung</div>
-      <div class="title-divider"></div>
-      <div class="title-date-row">
-        <div class="title-date-pill">${TODAY}</div>
-      </div>
-      <div class="title-slogan">"Rotary lässt Kinderaugen leuchten"</div>
-    </div>`;
+           onchange="handleTitleImage(event)"/>`;
   container.appendChild(s0);
 
   // SLIDE 1 — Agenda overview
@@ -1802,11 +1858,38 @@ function buildSlides() {
       s.innerHTML = `${hdrHTML}
         <div class="cs-body">
           <div class="cs-subtitle">${a.sub}</div>
+          <div class="format-toolbar" id="ftbar-${a.id}">
+            <select class="ft-select" onchange="ftFont('${a.id}',this.value)" title="Schriftart">
+              <option value="'DM Sans',sans-serif">DM Sans</option>
+              <option value="'DM Serif Display',serif">Serif</option>
+              <option value="Arial,sans-serif">Arial</option>
+              <option value="Georgia,serif">Georgia</option>
+              <option value="'Courier New',monospace">Mono</option>
+            </select>
+            <div class="ft-sep"></div>
+            <button class="ft-btn" onclick="ftSize('${a.id}',-2)" title="Kleiner">A−</button>
+            <span class="ft-size-display" id="ftsize-${a.id}">–</span>
+            <button class="ft-btn" onclick="ftSize('${a.id}',+2)" title="Größer">A+</button>
+            <div class="ft-sep"></div>
+            <button class="ft-btn" id="ftb-${a.id}" onclick="ftExec('bold')" title="Fett"><b>B</b></button>
+            <button class="ft-btn" id="fti-${a.id}" onclick="ftExec('italic')" title="Kursiv"><i>I</i></button>
+            <button class="ft-btn" id="ftu-${a.id}" onclick="ftExec('underline')" title="Unterstrichen"><u>U</u></button>
+            <div class="ft-sep"></div>
+            <button class="ft-btn" onclick="ftAlign('${a.id}','left')" title="Links">⬅</button>
+            <button class="ft-btn" onclick="ftAlign('${a.id}','center')" title="Mitte">⬛</button>
+            <button class="ft-btn" onclick="ftAlign('${a.id}','right')" title="Rechts">➡</button>
+            <div class="ft-sep"></div>
+            <button class="ft-btn" onclick="ftColor('${a.id}')" title="Textfarbe">🎨</button>
+            <input type="color" id="ftcolor-${a.id}" value="#1A2B4A" style="display:none;width:0;height:0;opacity:0" onchange="ftExec('foreColor',this.value)"/>
+          </div>
           <div class="cs-card">
             <div class="cs-card-inner">
               <div class="editable-content" id="content-${a.id}"
                 contenteditable="false"
                 data-placeholder="Hier Notizen, Tagesordnungspunkte oder Inhalte eintragen …"
+                onfocus="ftUpdateState('${a.id}')"
+                onkeyup="ftUpdateState('${a.id}')"
+                onmouseup="ftUpdateState('${a.id}')"
               >${savedContent}</div>
             </div>
             <div class="cs-watermark">${wheelSvg('currentColor','100%')}</div>
@@ -1862,6 +1945,61 @@ function toggleEdit() {
   });
   if (!editMode) saveData();
   toast(editMode ? '✏️ Bearbeitungsmodus aktiv' : 'Gespeichert ✓');
+}
+
+// ── TEXT FORMATTING ───────────────────────────────────────────
+function ftExec(cmd, val) {
+  document.execCommand(cmd, false, val || null);
+}
+
+function ftFont(id, fontName) {
+  const el = document.getElementById('content-'+id);
+  if (!el || !editMode) return;
+  el.style.fontFamily = fontName;
+  el.focus();
+}
+
+function ftSize(id, delta) {
+  const el = document.getElementById('content-'+id);
+  if (!el || !editMode) return;
+  el.focus();
+  const sel = window.getSelection();
+  if (sel && sel.rangeCount > 0 && !sel.isCollapsed) {
+    // Apply to selection via execCommand fontSize workaround
+    const tag = `<span style="font-size:${delta>0?'larger':'smaller'}">${sel.toString()}</span>`;
+    document.execCommand('insertHTML', false, tag);
+  } else {
+    // Apply to whole element
+    const cur = parseFloat(getComputedStyle(el).fontSize) || 18;
+    el.style.fontSize = Math.max(10, cur + delta) + 'px';
+  }
+  ftUpdateState(id);
+}
+
+function ftAlign(id, align) {
+  const el = document.getElementById('content-'+id);
+  if (!el || !editMode) return;
+  el.focus();
+  document.execCommand('justify' + align.charAt(0).toUpperCase() + align.slice(1), false, null);
+}
+
+function ftColor(id) {
+  document.getElementById('ftcolor-'+id).click();
+}
+
+function ftUpdateState(id) {
+  const el = document.getElementById('content-'+id);
+  if (!el) return;
+  // Update size display
+  const sz = document.getElementById('ftsize-'+id);
+  if (sz) sz.textContent = Math.round(parseFloat(getComputedStyle(el).fontSize)) + 'px';
+  // Update bold/italic/underline active states
+  ['b','i','u'].forEach(t => {
+    const btn = document.getElementById('ft'+t+'-'+id);
+    if (!btn) return;
+    const cmds = {b:'bold',i:'italic',u:'underline'};
+    btn.classList.toggle('active', document.queryCommandState(cmds[t]));
+  });
 }
 
 // ── FREE-POSITION IMAGES (multiple per slide, drag + resize) ──
