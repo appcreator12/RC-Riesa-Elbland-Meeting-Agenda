@@ -377,28 +377,30 @@ body.edit-mode #title-upload-zone { display: flex; }
   box-shadow: 0 3px 14px rgba(0,0,0,.25);
   pointer-events: none;
 }
-.fi-controls {
-  display: none;
-  position: absolute; top: -12px; right: -12px;
-}
-body.edit-mode .fi-item:hover .fi-controls,
-body.edit-mode .fi-item.active .fi-controls { display: block; }
+/* Delete button — top-right, always visible in edit mode */
 .fi-del {
-  position: absolute; top: 0; right: 0;
-  width: 22px; height: 22px; border-radius: 50%;
-  background: #c0392b; color: white; border: none;
-  font-size: 11px; cursor: pointer; line-height: 22px;
-  text-align: center; padding: 0;
+  position: absolute; top: -10px; right: -10px;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: #c0392b; color: white; border: 2px solid white;
+  font-size: 12px; cursor: pointer; line-height: 20px;
+  text-align: center; padding: 0; z-index: 2;
+  display: none; align-items: center; justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,.3);
 }
+body.edit-mode .fi-del { display: flex; }
+/* Resize handle — bottom-right corner */
 .fi-handle {
   position: absolute; bottom: -8px; right: -8px;
-  width: 16px; height: 16px;
-  background: var(--gold); border-radius: 3px;
+  width: 18px; height: 18px;
+  background: var(--gold); border-radius: 4px;
   cursor: se-resize; border: 2px solid white;
   box-shadow: 0 1px 4px rgba(0,0,0,.3);
+  display: none; z-index: 2;
 }
-body.edit-mode .fi-item { outline: 2px solid transparent; }
-body.edit-mode .fi-item:hover { outline-color: rgba(247,168,27,.6); }
+body.edit-mode .fi-handle { display: block; }
+/* Blue outline on hover in edit mode */
+body.edit-mode .fi-item:hover { outline: 2px solid var(--gold); outline-offset: 2px; }
+/* Add button */
 .fi-add-btn {
   position: absolute; bottom: 14px; right: 14px;
   display: none; align-items: center; gap: 6px;
@@ -2013,12 +2015,14 @@ function buildFImgLayer(agendaId) {
   const imgs = getFImgs(agendaId);
   const items = imgs.map((img, idx) => `
     <div class="fi-item" id="fi-${agendaId}-${idx}"
-      style="left:${img.x.toFixed(2)}%;top:${img.y.toFixed(2)}%;width:${img.w.toFixed(2)}%;height:${img.h.toFixed(2)}%">
+      style="left:${img.x.toFixed(2)}%;top:${img.y.toFixed(2)}%;width:${img.w.toFixed(2)}%;height:${img.h.toFixed(2)}%"
+      onmousedown="fiStartDrag(event,'${agendaId}',${idx})"
+      ontouchstart="fiStartDragT(event,'${agendaId}',${idx})">
       <img src="${img.src}" draggable="false" alt=""/>
-      <div class="fi-controls">
-        <button class="fi-del" onclick="deleteFImg('${agendaId}',${idx});event.stopPropagation()">✕</button>
-        <div class="fi-handle" onmousedown="fiStartResize(event,'${agendaId}',${idx})" ontouchstart="fiStartResizeT(event,'${agendaId}',${idx})"></div>
-      </div>
+      <button class="fi-del" onclick="deleteFImg('${agendaId}',${idx});event.stopPropagation()" ontouchend="deleteFImg('${agendaId}',${idx});event.stopPropagation()">✕</button>
+      <div class="fi-handle"
+        onmousedown="fiStartResize(event,'${agendaId}',${idx});event.stopPropagation()"
+        ontouchstart="fiStartResizeT(event,'${agendaId}',${idx});event.stopPropagation()"></div>
     </div>`).join('');
 
   return `<div class="free-img-layer" id="fil-${agendaId}">
@@ -2081,11 +2085,18 @@ function fiStartDrag(e, id, idx) {
   const lr = layer.getBoundingClientRect(), ir = item.getBoundingClientRect();
   _drag = { type:'move', id, idx,
     lw: lr.width, lh: lr.height,
-    cx: e.clientX||e.touches?.[0].clientX,
-    cy: e.clientY||e.touches?.[0].clientY,
+    cx: e.clientX, cy: e.clientY,
     ox: (ir.left-lr.left)/lr.width*100,
     oy: (ir.top-lr.top)/lr.height*100,
     ow: ir.width/lr.width*100, oh: ir.height/lr.height*100 };
+  item.style.cursor = 'grabbing';
+}
+function fiStartDragT(e, id, idx) {
+  if (!editMode || !e.touches.length) return;
+  e.stopPropagation();
+  const t = e.touches[0];
+  fiStartDrag({ clientX: t.clientX, clientY: t.clientY,
+    preventDefault: ()=>{}, stopPropagation: ()=>{} }, id, idx);
 }
 
 // ── RESIZE ────────────────────────────────────────────────────
@@ -2113,10 +2124,10 @@ document.addEventListener('mousemove', e => {
   const dx = (e.clientX - _drag.cx) / _drag.lw * 100;
   const dy = (e.clientY - _drag.cy) / _drag.lh * 100;
   if (_drag.type === 'move') {
-    item.style.left = Math.max(0, Math.min(85, _drag.ox + dx)).toFixed(2) + '%';
-    item.style.top  = Math.max(0, Math.min(85, _drag.oy + dy)).toFixed(2) + '%';
+    item.style.left = Math.max(0, Math.min(90, _drag.ox + dx)).toFixed(2) + '%';
+    item.style.top  = Math.max(0, Math.min(90, _drag.oy + dy)).toFixed(2) + '%';
   } else {
-    item.style.width  = Math.max(6, _drag.ow + dx).toFixed(2) + '%';
+    item.style.width  = Math.max(8, _drag.ow + dx).toFixed(2) + '%';
     item.style.height = Math.max(6, _drag.oh + dy).toFixed(2) + '%';
   }
 });
@@ -2125,6 +2136,7 @@ document.addEventListener('mouseup', () => {
   const { id, idx } = _drag;
   const item  = document.getElementById(`fi-${id}-${idx}`);
   const layer = document.getElementById(`fil-${id}`);
+  if (item) item.style.cursor = 'move';
   if (item && layer) {
     const lr = layer.getBoundingClientRect(), ir = item.getBoundingClientRect();
     const imgs = getFImgs(id);
@@ -2139,10 +2151,9 @@ document.addEventListener('mouseup', () => {
   _drag = null;
 });
 document.addEventListener('touchmove', e => {
-  if (!_drag) return;
+  if (!_drag || !e.touches.length) return;
   const t = e.touches[0];
-  const synth = { clientX: t.clientX, clientY: t.clientY };
-  document.dispatchEvent(new MouseEvent('mousemove', synth));
+  document.dispatchEvent(new MouseEvent('mousemove', { clientX: t.clientX, clientY: t.clientY }));
 }, { passive: true });
 document.addEventListener('touchend', () => {
   if (_drag) document.dispatchEvent(new MouseEvent('mouseup'));
