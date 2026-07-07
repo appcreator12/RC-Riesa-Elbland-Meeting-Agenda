@@ -2077,27 +2077,58 @@ function fImgAdd(id) {
   document.getElementById('fimginput-'+id).click();
 }
 function fImgFiles(event, id) {
-  [...event.target.files].forEach(file => compressAndAddFImg(id, file));
+  const files = [...event.target.files];
+  if (!files.length) return;
+  files.forEach(file => compressAndAddFImg(id, file));
   event.target.value = '';
 }
 
 function compressAndAddFImg(id, file) {
-  const imgEl = new Image(), url = URL.createObjectURL(file);
-  imgEl.onload = () => {
-    const MAX = 1600; let w = imgEl.width, h = imgEl.height;
-    if (w > MAX) { h = Math.round(h*MAX/w); w = MAX; }
-    const c = document.createElement('canvas'); c.width=w; c.height=h;
-    c.getContext('2d').drawImage(imgEl, 0, 0, w, h);
-    const src = c.toDataURL('image/jpeg', 0.82);
-    URL.revokeObjectURL(url);
-    const imgs = getFImgs(id);
-    const off  = imgs.length * 3;
-    imgs.push({ src, x: 5+off, y: 5+off, w: 38, h: 32 });
-    setFImgs(id, imgs);
-    refreshFImgLayer(id);
-    toast('Bild hinzugefügt ✓');
+  // Guard: only image files
+  if (!file.type.startsWith('image/')) {
+    toast('⚠ Keine Bilddatei: ' + (file.name||''));
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onerror = () => toast('⚠ Datei konnte nicht gelesen werden');
+  reader.onload = (ev) => {
+    const imgEl = new Image();
+
+    imgEl.onerror = () => {
+      // Common cause: HEIC/HEIF from iPhone that the browser can't decode
+      const isHeic = /\.hei[cf]$/i.test(file.name) || /image\/hei[cf]/i.test(file.type);
+      toast(isHeic
+        ? '⚠ HEIC-Format wird nicht unterstützt — bitte als JPG speichern'
+        : '⚠ Bild konnte nicht geladen werden');
+    };
+
+    imgEl.onload = () => {
+      try {
+        const MAX = 1600; let w = imgEl.naturalWidth, h = imgEl.naturalHeight;
+        if (!w || !h) { toast('⚠ Ungültige Bildabmessungen'); return; }
+        if (w > MAX) { h = Math.round(h*MAX/w); w = MAX; }
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(imgEl, 0, 0, w, h);
+        const src = c.toDataURL('image/jpeg', 0.82);
+
+        const imgs = getFImgs(id);
+        const off  = imgs.length * 3;
+        // Keep image aspect ratio for initial display box
+        const ratio = h / w;
+        const boxW = 38, boxH = Math.max(12, Math.min(60, boxW * ratio * 1.4));
+        imgs.push({ src, x: 5+off, y: 5+off, w: boxW, h: boxH });
+        setFImgs(id, imgs);
+        refreshFImgLayer(id);
+        toast('Bild hinzugefügt ✓');
+      } catch(err) {
+        toast('⚠ Fehler beim Verarbeiten: ' + err.message);
+      }
+    };
+
+    imgEl.src = ev.target.result; // data URL from FileReader
   };
-  imgEl.src = url;
+  reader.readAsDataURL(file);
 }
 
 function deleteFImg(id, idx) {
