@@ -406,12 +406,12 @@ body.edit-mode .fi-item:hover { outline: 2px solid var(--gold); outline-offset: 
   display: none; align-items: center; gap: 6px;
   background: var(--blue); color: white;
   border: none; border-radius: 20px;
-  padding: 7px 14px; font-size: 12px; font-weight: 500;
+  padding: 8px 16px; font-size: 12px; font-weight: 500;
   font-family: 'DM Sans', sans-serif;
   cursor: pointer; pointer-events: auto;
   box-shadow: 0 2px 10px rgba(0,63,135,.4);
   transition: background .2s, transform .15s;
-  z-index: 15;
+  z-index: 60;
 }
 .fi-add-btn:hover { background: var(--blue2); transform: scale(1.04); }
 body.edit-mode .fi-add-btn { display: flex; }
@@ -485,6 +485,9 @@ body:not(.edit-mode) .attachments:empty { display: none; }
   font-size: 10px; color: rgba(255,255,255,.3);
   z-index: 50; letter-spacing: .04em;
 }
+/* Hide navigation hints in edit mode so they don't block slide controls */
+body.edit-mode #fs-hint,
+body.edit-mode #counter { display: none; }
 
 .bday-photo {
   object-fit: cover; border-radius: 50%;
