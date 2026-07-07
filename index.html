@@ -832,7 +832,7 @@ body.edit-mode .csv-import-btn { display: flex; }
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
     Bearbeiten
   </button>
-  <button class="tb-btn" id="btn-save" onclick="saveData()" title="Speichern">
+  <button class="tb-btn" id="btn-save" onclick="saveDataWithFeedback()" title="Speichern">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
     Speichern
   </button>
@@ -947,13 +947,21 @@ function saveData() {
   });
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(data));
-    toast('Gespeichert ✓');
-  } catch {
-    const slim = {};
-    Object.keys(data).forEach(k=>{ if(!k.startsWith('file_')&&k!=='titleImage'&&!k.startsWith('img_')) slim[k]=data[k]; });
-    localStorage.setItem(LS_KEY, JSON.stringify(slim));
-    toast('Gespeichert (Bilder zu groß — nur Text gespeichert)');
+    return true;
+  } catch(e) {
+    // Quota exceeded — data with images is too large for localStorage (~5MB)
+    return false;
   }
+}
+
+// Estimate current data size in MB
+function dataSizeMB() {
+  try { return (JSON.stringify(data).length / 1048576); } catch { return 0; }
+}
+
+function saveDataWithFeedback() {
+  if (saveData()) toast('Gespeichert ✓');
+  else toast('⚠ Speicher voll — Bilder verkleinern oder per Export sichern');
 }
 function exportData() {
   const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
@@ -2033,7 +2041,7 @@ function ftUpdateState(id) {
 let _drag = null; // active drag/resize state
 
 function getFImgs(id)       { return data['fimgs_'+id] || []; }
-function setFImgs(id, imgs) { data['fimgs_'+id] = imgs; saveData(); }
+function setFImgs(id, imgs) { data['fimgs_'+id] = imgs; return saveData(); }
 
 // Build the floating image layer HTML for one slide (lives inside scroll container)
 function buildFImgLayer(agendaId) {
@@ -2105,22 +2113,45 @@ function compressAndAddFImg(id, file) {
 
     imgEl.onload = () => {
       try {
-        const MAX = 1600; let w = imgEl.naturalWidth, h = imgEl.naturalHeight;
-        if (!w || !h) { toast('⚠ Ungültige Bildabmessungen'); return; }
-        if (w > MAX) { h = Math.round(h*MAX/w); w = MAX; }
-        const c = document.createElement('canvas'); c.width = w; c.height = h;
-        c.getContext('2d').drawImage(imgEl, 0, 0, w, h);
-        const src = c.toDataURL('image/jpeg', 0.82);
+        const w0 = imgEl.naturalWidth, h0 = imgEl.naturalHeight;
+        if (!w0 || !h0) { toast('⚠ Ungültige Bildabmessungen'); return; }
+
+        // Try progressively smaller/lower-quality encodings until it fits storage.
+        // Presentation images don't need to be huge — 1200px is plenty for a slide.
+        const attempts = [
+          { max: 1200, q: 0.80 },
+          { max: 1000, q: 0.72 },
+          { max: 800,  q: 0.65 },
+          { max: 640,  q: 0.60 },
+        ];
 
         const imgs = getFImgs(id);
         const off  = imgs.length * 3;
-        // Keep image aspect ratio for initial display box
-        const ratio = h / w;
+        const ratio = h0 / w0;
         const boxW = 38, boxH = Math.max(12, Math.min(60, boxW * ratio * 1.4));
-        imgs.push({ src, x: 5+off, y: 5+off, w: boxW, h: boxH });
-        setFImgs(id, imgs);
-        refreshFImgLayer(id);
-        toast('Bild hinzugefügt ✓');
+
+        let saved = false, lastSrc = null;
+        for (const { max, q } of attempts) {
+          let w = w0, h = h0;
+          if (w > max) { h = Math.round(h * max / w); w = max; }
+          const c = document.createElement('canvas'); c.width = w; c.height = h;
+          c.getContext('2d').drawImage(imgEl, 0, 0, w, h);
+          lastSrc = c.toDataURL('image/jpeg', q);
+
+          // Tentatively add and try to save
+          imgs.push({ src: lastSrc, x: 5+off, y: 5+off, w: boxW, h: boxH });
+          data['fimgs_'+id] = imgs;
+          if (saveData()) { saved = true; break; }
+          imgs.pop(); // remove and retry smaller
+        }
+
+        if (saved) {
+          refreshFImgLayer(id);
+          toast('Bild hinzugefügt ✓');
+        } else {
+          // Even smallest didn't fit — storage is full of other images
+          toast('⚠ Speicher voll — bitte alte Bilder entfernen oder per Export sichern');
+        }
       } catch(err) {
         toast('⚠ Fehler beim Verarbeiten: ' + err.message);
       }
@@ -2247,7 +2278,8 @@ function handleTitleImage(event) {
       }
       fill.style.backgroundImage = `url('${src}')`;
     }
-    saveData(); toast('Bild gespeichert ✓');
+    if (saveData()) toast('Bild gespeichert ✓');
+    else toast('⚠ Speicher voll — Bild wird angezeigt, aber nicht dauerhaft gespeichert');
   };
   img.src = url;
 }
