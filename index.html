@@ -870,8 +870,8 @@ body.edit-mode .csv-import-btn { display: flex; }
 const AGENDA = [
   { id:"begruess", num:"01", title:"Begrüßung",                        sub:"Willkommen & Eröffnung der Sitzung",    type:"normal" },
   { id:"geburts",  num:"02", title:"Geburtstage",                       sub:"Glückwünsche & Jubiläen",               type:"birthdays" },
-  { id:"themen",   num:"03", title:"Themen der Sitzung",                sub:"Diskussion & Beschlüsse",               type:"normal" },
-  { id:"status",   num:"04", title:"Status Projekte & Veranstaltungen", sub:"Aktueller Sachstand & Updates",         type:"normal" },
+  { id:"themen",   num:"03", title:"Meetingthemen",                     sub:"Infos und Themenpunkte",                type:"normal" },
+  { id:"status",   num:"04", title:"Projekte und Veranstaltungen",      sub:"Aktueller Sachstand & Updates",         type:"normal" },
   { id:"termine",  num:"05", title:"Terminvorschau",                    sub:"Kommende Veranstaltungen & Termine",    type:"events" },
 ];
 
@@ -910,12 +910,12 @@ const TODAY  = `${DAYS[now.getDay()]}, ${now.getDate()}. ${MONTHS[now.getMonth()
 let current  = 0;
 let editMode = false;
 let data     = {};
-const LS_KEY = 'rc_meeting_v4'; // bumped → clears old cached birthday data
+const LS_KEY = 'rc_meeting_v5'; // bumped → clears old cached birthday data
 
 // ── STORAGE ───────────────────────────────────────────────────
 function loadData() {
   // Silently migrate old keys, discarding stale birthday data
-  ['rc_meeting_v2','rc_meeting_v3'].forEach(old => {
+  ['rc_meeting_v2','rc_meeting_v3','rc_meeting_v4'].forEach(old => {
     try {
       const prev = JSON.parse(localStorage.getItem(old) || 'null');
       if (prev) {
@@ -1045,8 +1045,19 @@ function parseMemberPDF(text) {
     const words = before.split(/\s+/).filter(Boolean);
     if (words.length < 2) return;
 
-    const nachname = words[0].replace(/[,.]$/, '');
-    const vorname  = words[1].replace(/[,.]$/, '');
+    // Handle hyphenated surname split across PDF lines:
+    // "Brade-Schwegler" arrives as ["Brade-", "Schwegler", "Dorit"]
+    // → merge trailing-hyphen word with the next one
+    let wi = 0;
+    let nachname = words[wi++];
+    while (nachname.endsWith('-') && wi < words.length) {
+      nachname += words[wi++];
+    }
+    if (wi >= words.length) return; // no Vorname left
+    let vorname = words[wi];
+
+    nachname = nachname.replace(/[,.]$/, '');
+    vorname  = vorname.replace(/[,.]$/, '');
 
     // Sanity: both must look like real name parts (uppercase start, ≥2 chars)
     if (!/^[A-Z\u00c4\u00d6\u00dc][a-z\u00e4\u00f6\u00fc\u00df-]/.test(nachname)) return;
