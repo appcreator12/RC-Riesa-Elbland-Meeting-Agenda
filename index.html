@@ -963,8 +963,18 @@ function saveDataWithFeedback() {
   if (saveData()) toast('Gespeichert ✓');
   else toast('⚠ Speicher voll — Bilder verkleinern oder per Export sichern');
 }
-function exportData() {
-  const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+async function exportData() {
+  // Bundle metadata + all image blobs from IndexedDB
+  const bundle = { ...data, _images: {} };
+  for (const a of AGENDA) {
+    for (const m of (data['fimgs_'+a.id] || [])) {
+      if (m.imgId && !bundle._images[m.imgId]) {
+        const src = await idbGet(m.imgId).catch(()=>null);
+        if (src) bundle._images[m.imgId] = src;
+      }
+    }
+  }
+  const blob = new Blob([JSON.stringify(bundle,null,2)],{type:'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `sitzung-${now.toISOString().slice(0,10)}.json`;
@@ -2040,23 +2050,87 @@ function ftUpdateState(id) {
 // ── FREE-POSITION IMAGES (multiple per slide, drag + resize) ──
 let _drag = null; // active drag/resize state
 
-function getFImgs(id)       { return data['fimgs_'+id] || []; }
+// ── IMAGE STORAGE via IndexedDB (localStorage is too small, ~5MB) ──
+// Image blobs (base64) live in IndexedDB (hundreds of MB available).
+// Only lightweight metadata {imgId, x, y, w, h} stays in localStorage `data`.
+let _idb = null;
+const IDB_NAME = 'rc_meeting_images', IDB_STORE = 'images';
+const _imgCache = {}; // imgId → dataURL (in-memory, populated on load)
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    if (_idb) return resolve(_idb);
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(IDB_STORE)) db.createObjectStore(IDB_STORE);
+    };
+    req.onsuccess = (e) => { _idb = e.target.result; resolve(_idb); };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbPut(imgId, dataURL) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(dataURL, imgId);
+    tx.oncomplete = () => { _imgCache[imgId] = dataURL; resolve(); };
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGet(imgId) {
+  if (_imgCache[imgId]) return _imgCache[imgId];
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(IDB_STORE, 'readonly').objectStore(IDB_STORE).get(imgId);
+    req.onsuccess = () => { if (req.result) _imgCache[imgId] = req.result; resolve(req.result || null); };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbDelete(imgId) {
+  delete _imgCache[imgId];
+  const db = await idbOpen();
+  return new Promise((resolve) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).delete(imgId);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+  });
+}
+
+// Preload all images referenced in metadata into the in-memory cache
+async function preloadAllImages() {
+  const ids = [];
+  AGENDA.forEach(a => {
+    (data['fimgs_'+a.id] || []).forEach(m => { if (m.imgId) ids.push(m.imgId); });
+  });
+  await Promise.all(ids.map(id => idbGet(id).catch(()=>null)));
+}
+
+// Metadata helpers (positions/sizes stored in localStorage `data`)
+function getFImgs(id) { return data['fimgs_'+id] || []; }
 function setFImgs(id, imgs) { data['fimgs_'+id] = imgs; return saveData(); }
 
 // Build the floating image layer HTML for one slide (lives inside scroll container)
 function buildFImgLayer(agendaId) {
   const imgs = getFImgs(agendaId);
-  const items = imgs.map((img, idx) => `
+  const items = imgs.map((img, idx) => {
+    const src = img.src || _imgCache[img.imgId] || '';
+    return `
     <div class="fi-item" id="fi-${agendaId}-${idx}"
       style="left:${img.x.toFixed(2)}%;top:${img.y.toFixed(2)}%;width:${img.w.toFixed(2)}%;height:${img.h.toFixed(2)}%"
       onmousedown="fiStartDrag(event,'${agendaId}',${idx})"
       ontouchstart="fiStartDragT(event,'${agendaId}',${idx})">
-      <img src="${img.src}" draggable="false" alt=""/>
+      <img src="${src}" draggable="false" alt=""/>
       <button class="fi-del" onclick="deleteFImg('${agendaId}',${idx});event.stopPropagation()" ontouchend="deleteFImg('${agendaId}',${idx});event.stopPropagation()">✕</button>
       <div class="fi-handle"
         onmousedown="fiStartResize(event,'${agendaId}',${idx});event.stopPropagation()"
         ontouchstart="fiStartResizeT(event,'${agendaId}',${idx});event.stopPropagation()"></div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   return `<div class="free-img-layer" id="fil-${agendaId}">${items}</div>`;
 }
@@ -2104,67 +2178,61 @@ function compressAndAddFImg(id, file) {
     const imgEl = new Image();
 
     imgEl.onerror = () => {
-      // Common cause: HEIC/HEIF from iPhone that the browser can't decode
       const isHeic = /\.hei[cf]$/i.test(file.name) || /image\/hei[cf]/i.test(file.type);
       toast(isHeic
         ? '⚠ HEIC-Format wird nicht unterstützt — bitte als JPG speichern'
         : '⚠ Bild konnte nicht geladen werden');
     };
 
-    imgEl.onload = () => {
+    imgEl.onload = async () => {
       try {
         const w0 = imgEl.naturalWidth, h0 = imgEl.naturalHeight;
         if (!w0 || !h0) { toast('⚠ Ungültige Bildabmessungen'); return; }
 
-        // Try progressively smaller/lower-quality encodings until it fits storage.
-        // Presentation images don't need to be huge — 1200px is plenty for a slide.
-        const attempts = [
-          { max: 1200, q: 0.80 },
-          { max: 1000, q: 0.72 },
-          { max: 800,  q: 0.65 },
-          { max: 640,  q: 0.60 },
-        ];
+        // Compress to a reasonable presentation size (1400px is plenty, IndexedDB has room)
+        const MAX = 1400;
+        let w = w0, h = h0;
+        if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+        const c = document.createElement('canvas'); c.width = w; c.height = h;
+        c.getContext('2d').drawImage(imgEl, 0, 0, w, h);
+        const dataURL = c.toDataURL('image/jpeg', 0.85);
 
+        // Generate unique image id, store blob in IndexedDB
+        const imgId = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+        try {
+          await idbPut(imgId, dataURL);
+        } catch(dbErr) {
+          toast('⚠ Bild konnte nicht gespeichert werden: ' + dbErr.message);
+          return;
+        }
+
+        // Store only lightweight metadata in localStorage
         const imgs = getFImgs(id);
         const off  = imgs.length * 3;
         const ratio = h0 / w0;
         const boxW = 38, boxH = Math.max(12, Math.min(60, boxW * ratio * 1.4));
+        imgs.push({ imgId, x: 5+off, y: 5+off, w: boxW, h: boxH });
+        data['fimgs_'+id] = imgs;
+        saveData(); // metadata is tiny, always fits
 
-        let saved = false, lastSrc = null;
-        for (const { max, q } of attempts) {
-          let w = w0, h = h0;
-          if (w > max) { h = Math.round(h * max / w); w = max; }
-          const c = document.createElement('canvas'); c.width = w; c.height = h;
-          c.getContext('2d').drawImage(imgEl, 0, 0, w, h);
-          lastSrc = c.toDataURL('image/jpeg', q);
-
-          // Tentatively add and try to save
-          imgs.push({ src: lastSrc, x: 5+off, y: 5+off, w: boxW, h: boxH });
-          data['fimgs_'+id] = imgs;
-          if (saveData()) { saved = true; break; }
-          imgs.pop(); // remove and retry smaller
-        }
-
-        if (saved) {
-          refreshFImgLayer(id);
-          toast('Bild hinzugefügt ✓');
-        } else {
-          // Even smallest didn't fit — storage is full of other images
-          toast('⚠ Speicher voll — bitte alte Bilder entfernen oder per Export sichern');
-        }
+        refreshFImgLayer(id);
+        toast('Bild hinzugefügt ✓');
       } catch(err) {
         toast('⚠ Fehler beim Verarbeiten: ' + err.message);
       }
     };
 
-    imgEl.src = ev.target.result; // data URL from FileReader
+    imgEl.src = ev.target.result;
   };
   reader.readAsDataURL(file);
 }
 
-function deleteFImg(id, idx) {
-  const imgs = getFImgs(id); imgs.splice(idx, 1);
-  setFImgs(id, imgs); refreshFImgLayer(id);
+async function deleteFImg(id, idx) {
+  const imgs = getFImgs(id);
+  const removed = imgs.splice(idx, 1)[0];
+  if (removed?.imgId) await idbDelete(removed.imgId);
+  setFImgs(id, imgs);
+  refreshFImgLayer(id);
 }
 
 // ── DRAG (move) ───────────────────────────────────────────────
@@ -2310,6 +2378,17 @@ document.addEventListener('keydown', e => {
 loadData();
 buildSlides();
 showSlide(0);
+
+// Preload images from IndexedDB, then re-render slides that have images
+(async () => {
+  try {
+    await preloadAllImages();
+    // Re-render image layers now that blobs are in cache
+    AGENDA.forEach(a => {
+      if ((data['fimgs_'+a.id] || []).length) refreshFImgLayer(a.id);
+    });
+  } catch(e) { console.warn('Image preload failed:', e); }
+})();
 </script>
 
 </body>
