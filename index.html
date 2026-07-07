@@ -939,6 +939,20 @@ function loadData() {
     } catch {}
   });
   try { data = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { data = {}; }
+
+  // Migrate old inline-image entries (had {src} in localStorage) → drop them.
+  // They caused misplacement bugs; images now live in IndexedDB via {imgId}.
+  let migrated = false;
+  Object.keys(data).forEach(k => {
+    if (k.startsWith('fimgs_') && Array.isArray(data[k])) {
+      const cleaned = data[k].filter(m => m && m.imgId); // keep only IndexedDB refs
+      if (cleaned.length !== data[k].length) migrated = true;
+      data[k] = cleaned;
+    }
+  });
+  if (migrated) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch {}
+  }
 }
 function saveData() {
   AGENDA.forEach(a => {
@@ -2118,7 +2132,8 @@ function setFImgs(id, imgs) { data['fimgs_'+id] = imgs; return saveData(); }
 function buildFImgLayer(agendaId) {
   const imgs = getFImgs(agendaId);
   const items = imgs.map((img, idx) => {
-    const src = img.src || _imgCache[img.imgId] || '';
+    const src = img.imgId ? (_imgCache[img.imgId] || '') : (img.src || '');
+    if (!src) return ''; // no resolvable image → skip (stale/old entry)
     return `
     <div class="fi-item" id="fi-${agendaId}-${idx}"
       style="left:${img.x.toFixed(2)}%;top:${img.y.toFixed(2)}%;width:${img.w.toFixed(2)}%;height:${img.h.toFixed(2)}%"
