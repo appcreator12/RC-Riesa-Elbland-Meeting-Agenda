@@ -404,27 +404,26 @@ body.edit-mode .fi-del { display: flex; }
 body.edit-mode .fi-handle { display: block; }
 /* Blue outline on hover in edit mode */
 body.edit-mode .fi-item:hover { outline: 2px solid var(--gold); outline-offset: 2px; }
-/* Add button — prominent gold, always visible */
+/* Add button — only visible on the ACTIVE slide, and only in edit mode */
 .fi-add-btn {
   position: absolute; bottom: 16px; right: 16px;
-  display: flex; align-items: center; gap: 7px;
+  display: none; align-items: center; gap: 7px;
   background: var(--gold); color: var(--blue);
   border: none; border-radius: 24px;
   padding: 11px 20px; font-size: 14px; font-weight: 700;
   font-family: 'DM Sans', sans-serif;
   cursor: pointer; pointer-events: auto;
   box-shadow: 0 4px 16px rgba(247,168,27,.5);
-  transition: background .2s, transform .15s, box-shadow .2s, opacity .2s;
+  transition: background .2s, transform .15s, box-shadow .2s;
   z-index: 60;
-  opacity: .55;
 }
-body.edit-mode .fi-add-btn { opacity: 1; }
+/* Show ONLY when in edit mode AND on the currently active slide */
+body.edit-mode .slide.active .fi-add-btn { display: flex; }
 .fi-add-btn:hover {
-  background: #ffb733; transform: scale(1.05); opacity: 1;
+  background: #ffb733; transform: scale(1.05);
   box-shadow: 0 6px 20px rgba(247,168,27,.6);
 }
 .fi-add-btn svg { stroke: var(--blue); }
-body.edit-mode .fi-add-btn { display: flex; }
 
 /* ── FORMAT TOOLBAR ──────────────────────────── */
 .format-toolbar {
