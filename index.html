@@ -27,18 +27,31 @@
 
 body {
   font-family: 'DM Sans', sans-serif;
-  background: var(--blue);
+  background: #0a1020;
   color: var(--text);
   height: 100dvh;
   overflow: hidden;
   user-select: none;
 }
 
-/* ── SLIDES ─────────────────────────────── */
+/* ── FIXED 16:9 STAGE ─────────────────────────
+   The whole deck is a fixed 1280×720 stage that scales as a single unit to
+   fit the viewport. Because all internal coordinates are relative to this
+   fixed size, images and text NEVER shift between devices/aspect ratios. */
+#stage-wrap {
+  position: fixed; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #0a1020;
+  overflow: hidden;
+}
 #slides {
-  width: 100vw; height: 100dvh;
+  width: 1280px; height: 720px;
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
+  transform-origin: center center;
+  background: var(--blue);
+  box-shadow: 0 10px 60px rgba(0,0,0,.5);
 }
 
 .slide {
@@ -360,12 +373,11 @@ body.edit-mode #title-upload-zone { display: flex; }
 }
 
 /* ── FREE-POSITION IMAGES ────────────────────── */
-/* Layer lives INSIDE the scrollable text container so images scroll with text.
-   It spans the full scroll height (min 100%) and images are positioned
-   absolutely relative to this scrolling content. */
+/* ── FREE-POSITION IMAGES (on fixed 1280×720 stage) ───────────
+   Coordinates are % of the fixed stage, so they're identical on every device.
+   The stage scales as a whole → images never shift relative to the slide. */
 .free-img-layer {
-  position: absolute; top: 0; left: 0;
-  width: 100%; height: 100%; min-height: 100%;
+  position: absolute; inset: 0;
   pointer-events: none; z-index: 12;
 }
 .fi-item {
@@ -377,17 +389,17 @@ body.edit-mode #title-upload-zone { display: flex; }
 .fi-item img {
   width: 100%; height: 100%;
   object-fit: contain; display: block;
-  border-radius: 4px;
-  box-shadow: 0 3px 14px rgba(0,0,0,.25);
+  border-radius: 6px;
+  box-shadow: 0 3px 14px rgba(0,0,0,.22);
   pointer-events: none;
 }
-/* Delete button — top-right, always visible in edit mode */
+/* Delete button */
 .fi-del {
   position: absolute; top: -10px; right: -10px;
   width: 24px; height: 24px; border-radius: 50%;
   background: #c0392b; color: white; border: 2px solid white;
   font-size: 12px; cursor: pointer; line-height: 20px;
-  text-align: center; padding: 0; z-index: 2;
+  text-align: center; padding: 0; z-index: 3;
   display: none; align-items: center; justify-content: center;
   box-shadow: 0 2px 6px rgba(0,0,0,.3);
 }
@@ -399,11 +411,11 @@ body.edit-mode .fi-del { display: flex; }
   background: var(--gold); border-radius: 4px;
   cursor: se-resize; border: 2px solid white;
   box-shadow: 0 1px 4px rgba(0,0,0,.3);
-  display: none; z-index: 2;
+  display: none; z-index: 3;
 }
 body.edit-mode .fi-handle { display: block; }
-/* Blue outline on hover in edit mode */
-body.edit-mode .fi-item:hover { outline: 2px solid var(--gold); outline-offset: 2px; }
+body.edit-mode .fi-item { outline: 2px dashed transparent; outline-offset: 3px; transition: outline-color .15s; }
+body.edit-mode .fi-item:hover { outline-color: var(--gold); }
 /* Add button — only visible on the ACTIVE slide, and only in edit mode */
 .fi-add-btn {
   position: absolute; bottom: 16px; right: 16px;
@@ -417,7 +429,6 @@ body.edit-mode .fi-item:hover { outline: 2px solid var(--gold); outline-offset: 
   transition: background .2s, transform .15s, box-shadow .2s;
   z-index: 60;
 }
-/* Show ONLY when in edit mode AND on the currently active slide */
 body.edit-mode .slide.active .fi-add-btn { display: flex; }
 .fi-add-btn:hover {
   background: #ffb733; transform: scale(1.05);
@@ -844,7 +855,7 @@ body.edit-mode .csv-import-btn { display: flex; }
   <button class="tb-btn" onclick="document.getElementById('import-file-input').click()" title="Import – Daten & Bilder laden">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
   </button>
-  <input type="file" id="import-file-input" accept=".json,application/json" style="display:none" onchange="importData(event)"/>
+  <input type="file" id="import-file-input" style="display:none" onchange="importData(event)"/>
 </div>
 
 <!-- Navigation -->
@@ -859,7 +870,7 @@ body.edit-mode .csv-import-btn { display: flex; }
 <div id="fs-hint">F · Vollbild &nbsp;|&nbsp; ← → · Navigation &nbsp;|&nbsp; E · Bearbeiten</div>
 <div id="toast"></div>
 
-<div id="slides"></div>
+<div id="stage-wrap"><div id="slides"></div></div>
 
 <!-- PDF Import Modal -->
 <div id="import-modal">
@@ -943,13 +954,25 @@ function loadData() {
   });
   try { data = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { data = {}; }
 
-  // Migrate old inline-image entries (had {src} in localStorage) → drop them.
-  // They caused misplacement bugs; images now live in IndexedDB via {imgId}.
+  // Migrate image metadata to the fixed-stage model {x,y,w,h} (% of 1280×720).
+  // Handles both very old {x,y,w,h}-only entries and the interim {width,align}.
   let migrated = false;
   Object.keys(data).forEach(k => {
     if (k.startsWith('fimgs_') && Array.isArray(data[k])) {
-      const cleaned = data[k].filter(m => m && m.imgId); // keep only IndexedDB refs
-      if (cleaned.length !== data[k].length) migrated = true;
+      const cleaned = [];
+      data[k].forEach((m, i) => {
+        if (!m || !m.imgId) { migrated = true; return; } // drop inline {src}/broken
+        if (typeof m.x === 'number' && typeof m.y === 'number'
+            && typeof m.w === 'number' && typeof m.h === 'number') {
+          cleaned.push({ imgId: m.imgId, x: m.x, y: m.y, w: m.w, h: m.h }); // already stage format
+        } else {
+          // Interim {width,align} or missing coords → give a sensible stage spot
+          const w = m.width || 34;
+          const off = i * 3;
+          cleaned.push({ imgId: m.imgId, x: 8 + off, y: 40 + off, w, h: w });
+          migrated = true;
+        }
+      });
       data[k] = cleaned;
     }
   });
@@ -1003,58 +1026,66 @@ async function importData(event) {
   if (!file) return;
   event.target.value = ''; // allow re-selecting same file
 
-  if (!confirm('Import überschreibt alle aktuellen Daten und Bilder auf diesem Gerät. Fortfahren?')) return;
+  toast('Datei wird gelesen …');
 
   const reader = new FileReader();
-  reader.onerror = () => toast('⚠ Datei konnte nicht gelesen werden');
+  reader.onerror = () => toast('⚠ Datei konnte nicht gelesen werden (' + (reader.error?.name||'Fehler') + ')');
+  reader.onabort = () => toast('⚠ Lesen abgebrochen');
   reader.onload = async (ev) => {
     let bundle;
     try {
-      bundle = JSON.parse(ev.target.result);
-    } catch {
-      toast('⚠ Ungültige Datei – kein gültiges JSON');
+      let text = ev.target.result;
+      // Strip UTF-8 BOM if present (some export tools add it, breaks JSON.parse)
+      if (typeof text === 'string' && text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+      bundle = JSON.parse(text);
+    } catch(parseErr) {
+      toast('⚠ Ungültige JSON-Datei: ' + parseErr.message);
       return;
     }
     if (typeof bundle !== 'object' || bundle === null) {
-      toast('⚠ Ungültiges Dateiformat');
+      toast('⚠ Datei enthält keine gültigen Daten');
       return;
     }
 
     try {
-      toast('Import läuft …');
-
-      // 1. Extract bundled images and write them to IndexedDB
+      // 1. Extract bundled images → IndexedDB
       const images = bundle._images || {};
       const imgIds = Object.keys(images);
+      let idbOk = true;
       for (const imgId of imgIds) {
-        await idbPut(imgId, images[imgId]).catch(()=>{});
+        try { await idbPut(imgId, images[imgId]); }
+        catch(e) { idbOk = false; }
       }
 
-      // 2. Strip the image bundle, keep the rest as the new data object
+      // 2. Keep everything except the image bundle
       const { _images, ...rest } = bundle;
       data = rest;
 
-      // 3. Persist metadata to localStorage
-      try {
-        localStorage.setItem(LS_KEY, JSON.stringify(data));
-      } catch {
-        // Metadata alone shouldn't exceed quota, but guard anyway
-      }
+      // 3. Persist metadata
+      try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch {}
 
-      // 4. Refresh in-memory image cache and rebuild everything
+      // 4. Reload image cache + rebuild UI
       Object.keys(_imgCache).forEach(k => delete _imgCache[k]);
       await preloadAllImages();
       buildSlides();
       showSlide(0);
       AGENDA.forEach(a => { if ((data['fimgs_'+a.id]||[]).length) refreshFImgLayer(a.id); });
 
-      const imgCount = imgIds.length;
-      toast(`✓ Import erfolgreich${imgCount ? ' (' + imgCount + ' Bilder)' : ''}`);
+      if (imgIds.length && !idbOk) {
+        toast('✓ Daten geladen, aber Bilder konnten nicht gespeichert werden');
+      } else {
+        toast(`✓ Import erfolgreich${imgIds.length ? ' (' + imgIds.length + ' Bilder)' : ''}`);
+      }
     } catch(err) {
-      toast('⚠ Import fehlgeschlagen: ' + err.message);
+      toast('⚠ Import fehlgeschlagen: ' + (err.message || err));
     }
   };
-  reader.readAsText(file);
+
+  try {
+    reader.readAsText(file);
+  } catch(err) {
+    toast('⚠ Datei kann nicht gelesen werden: ' + err.message);
+  }
 }
 
 function clearBirthdays() {
@@ -2011,13 +2042,13 @@ function buildSlides() {
                 onkeyup="ftUpdateState('${a.id}')"
                 onmouseup="ftUpdateState('${a.id}')"
               >${savedContent}</div>
-              ${buildFImgLayer(a.id)}
             </div>
             <div class="cs-watermark">${wheelSvg('currentColor','100%')}</div>
             ${buildFImgAddBtn(a.id)}
           </div>
         </div>
-        <div class="slide-footer">RC Riesa-Elbland</div>`;
+        <div class="slide-footer">RC Riesa-Elbland</div>
+        ${buildFImgLayer(a.id)}`;
     }
     container.appendChild(s);
   });
@@ -2124,7 +2155,7 @@ function ftUpdateState(id) {
 }
 
 // ── FREE-POSITION IMAGES (multiple per slide, drag + resize) ──
-let _drag = null; // active drag/resize state
+let _drag = null; // active drag/resize state (fixed-stage coordinates)
 
 // ── IMAGE STORAGE via IndexedDB (localStorage is too small, ~5MB) ──
 // Image blobs (base64) live in IndexedDB (hundreds of MB available).
@@ -2190,15 +2221,17 @@ async function preloadAllImages() {
 function getFImgs(id) { return data['fimgs_'+id] || []; }
 function setFImgs(id, imgs) { data['fimgs_'+id] = imgs; return saveData(); }
 
-// Build the floating image layer HTML for one slide (lives inside scroll container)
+// Build the free-position image layer. On the fixed 1280×720 stage, each image
+// has absolute x/y/w/h in % of the stage — identical on every device.
 function buildFImgLayer(agendaId) {
   const imgs = getFImgs(agendaId);
   const items = imgs.map((img, idx) => {
     const src = img.imgId ? (_imgCache[img.imgId] || '') : (img.src || '');
-    if (!src) return ''; // no resolvable image → skip (stale/old entry)
+    if (!src) return ''; // no resolvable image → skip
+    const x = img.x ?? 8, y = img.y ?? 40, w = img.w ?? 34, h = img.h ?? 34;
     return `
     <div class="fi-item" id="fi-${agendaId}-${idx}"
-      style="left:${img.x.toFixed(2)}%;top:${img.y.toFixed(2)}%;width:${img.w.toFixed(2)}%;height:${img.h.toFixed(2)}%"
+      style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%;width:${w.toFixed(2)}%;height:${h.toFixed(2)}%"
       onmousedown="fiStartDrag(event,'${agendaId}',${idx})"
       ontouchstart="fiStartDragT(event,'${agendaId}',${idx})">
       <img src="${src}" draggable="false" alt=""/>
@@ -2283,12 +2316,14 @@ function compressAndAddFImg(id, file) {
           return;
         }
 
-        // Store only lightweight metadata in localStorage
+        // New image: place at a sensible default spot (lower-left area),
+        // sized by aspect ratio. Coordinates are % of the fixed 1280×720 stage.
         const imgs = getFImgs(id);
-        const off  = imgs.length * 3;
-        const ratio = h0 / w0;
-        const boxW = 38, boxH = Math.max(12, Math.min(60, boxW * ratio * 1.4));
-        imgs.push({ imgId, x: 5+off, y: 5+off, w: boxW, h: boxH });
+        const ratio = h0 / w0;               // height/width
+        const stageW = 34;                   // % of stage width
+        const stageH = Math.max(12, Math.min(70, stageW * ratio * (1280/720))); // keep aspect on 16:9 stage
+        const off = imgs.length * 3;
+        imgs.push({ imgId, x: 8 + off, y: 40 + off, w: stageW, h: stageH });
         data['fimgs_'+id] = imgs;
         saveData(); // metadata is tiny, always fits
 
@@ -2312,89 +2347,73 @@ async function deleteFImg(id, idx) {
   refreshFImgLayer(id);
 }
 
-// ── DRAG (move) ───────────────────────────────────────────────
-function fiStartDrag(e, id, idx) {
+// ── DRAG & RESIZE (on the fixed 1280×720 stage) ───────────────
+// The stage is scaled by `fitStage()`; we read the layer's on-screen rect
+// (already scaled) so pointer deltas map correctly to stage-% coordinates.
+function fiPointerStart(e, id, idx, type) {
   if (!editMode) return;
-  e.preventDefault(); e.stopPropagation();
   const layer = document.getElementById('fil-'+id);
   const item  = document.getElementById(`fi-${id}-${idx}`);
-  if (!layer||!item) return;
-  const lr = layer.getBoundingClientRect(), ir = item.getBoundingClientRect();
-  _drag = { type:'move', id, idx,
-    lw: lr.width, lh: lr.height,
+  if (!layer || !item) return;
+  const lr = layer.getBoundingClientRect();
+  const imgs = getFImgs(id);
+  const m = imgs[idx]; if (!m) return;
+  _drag = {
+    type, id, idx,
+    lw: lr.width, lh: lr.height,           // scaled layer size in px
     cx: e.clientX, cy: e.clientY,
-    ox: (ir.left-lr.left)/lr.width*100,
-    oy: (ir.top-lr.top)/lr.height*100,
-    ow: ir.width/lr.width*100, oh: ir.height/lr.height*100 };
-  item.style.cursor = 'grabbing';
+    ox: m.x ?? 8, oy: m.y ?? 40, ow: m.w ?? 34, oh: m.h ?? 34,
+  };
+  if (type === 'move') item.style.cursor = 'grabbing';
 }
-function fiStartDragT(e, id, idx) {
-  if (!editMode || !e.touches.length) return;
-  e.stopPropagation();
-  const t = e.touches[0];
-  fiStartDrag({ clientX: t.clientX, clientY: t.clientY,
-    preventDefault: ()=>{}, stopPropagation: ()=>{} }, id, idx);
-}
+function fiStartDrag(e, id, idx)   { e.preventDefault(); e.stopPropagation(); fiPointerStart(e, id, idx, 'move'); }
+function fiStartResize(e, id, idx) { e.preventDefault(); e.stopPropagation(); fiPointerStart(e, id, idx, 'resize'); }
+function fiStartDragT(e, id, idx)  { if (!e.touches.length) return; e.stopPropagation(); const t=e.touches[0]; fiPointerStart({clientX:t.clientX,clientY:t.clientY}, id, idx, 'move'); }
+function fiStartResizeT(e, id, idx){ if (!e.touches.length) return; e.stopPropagation(); const t=e.touches[0]; fiPointerStart({clientX:t.clientX,clientY:t.clientY}, id, idx, 'resize'); }
 
-// ── RESIZE ────────────────────────────────────────────────────
-function fiStartResize(e, id, idx) {
-  if (!editMode) return;
-  e.preventDefault(); e.stopPropagation();
-  const layer = document.getElementById('fil-'+id);
-  const item  = document.getElementById(`fi-${id}-${idx}`);
-  if (!layer||!item) return;
-  const lr = layer.getBoundingClientRect(), ir = item.getBoundingClientRect();
-  _drag = { type:'resize', id, idx,
-    lw: lr.width, lh: lr.height,
-    cx: e.clientX, cy: e.clientY,
-    ox: (ir.left-lr.left)/lr.width*100,
-    oy: (ir.top-lr.top)/lr.height*100,
-    ow: ir.width/lr.width*100, oh: ir.height/lr.height*100 };
-}
-function fiStartResizeT(e,id,idx){fiStartResize(e.touches[0]&&{clientX:e.touches[0].clientX,clientY:e.touches[0].clientY,preventDefault:()=>{},stopPropagation:()=>{}},id,idx);}
+document.addEventListener('mousemove', e => { if (_drag) fiPointerMove(e.clientX, e.clientY); });
+document.addEventListener('touchmove', e => {
+  if (_drag && e.touches.length) { fiPointerMove(e.touches[0].clientX, e.touches[0].clientY); }
+}, { passive: true });
 
-// Global move + up
-document.addEventListener('mousemove', e => {
-  if (!_drag) return;
+function fiPointerMove(cx, cy) {
   const item = document.getElementById(`fi-${_drag.id}-${_drag.idx}`);
   if (!item) return;
-  const dx = (e.clientX - _drag.cx) / _drag.lw * 100;
-  const dy = (e.clientY - _drag.cy) / _drag.lh * 100;
+  // Convert px delta → % of stage (layer rect is already scaled, so this is correct)
+  const dxPct = (cx - _drag.cx) / _drag.lw * 100;
+  const dyPct = (cy - _drag.cy) / _drag.lh * 100;
   if (_drag.type === 'move') {
-    item.style.left = Math.max(0, Math.min(90, _drag.ox + dx)).toFixed(2) + '%';
-    item.style.top  = Math.max(0, Math.min(90, _drag.oy + dy)).toFixed(2) + '%';
+    const nx = Math.max(0, Math.min(100 - _drag.ow, _drag.ox + dxPct));
+    const ny = Math.max(0, Math.min(100 - _drag.oh, _drag.oy + dyPct));
+    item.style.left = nx.toFixed(2) + '%';
+    item.style.top  = ny.toFixed(2) + '%';
   } else {
-    item.style.width  = Math.max(8, _drag.ow + dx).toFixed(2) + '%';
-    item.style.height = Math.max(6, _drag.oh + dy).toFixed(2) + '%';
+    const nw = Math.max(8, Math.min(100, _drag.ow + dxPct));
+    const nh = Math.max(6, Math.min(100, _drag.oh + dyPct));
+    item.style.width  = nw.toFixed(2) + '%';
+    item.style.height = nh.toFixed(2) + '%';
   }
-});
-document.addEventListener('mouseup', () => {
+}
+
+function fiPointerEnd() {
   if (!_drag) return;
   const { id, idx } = _drag;
-  const item  = document.getElementById(`fi-${id}-${idx}`);
-  const layer = document.getElementById(`fil-${id}`);
-  if (item) item.style.cursor = 'move';
-  if (item && layer) {
-    const lr = layer.getBoundingClientRect(), ir = item.getBoundingClientRect();
+  const item = document.getElementById(`fi-${id}-${idx}`);
+  if (item) {
+    item.style.cursor = 'move';
     const imgs = getFImgs(id);
     if (imgs[idx]) {
-      imgs[idx].x = (ir.left-lr.left)/lr.width*100;
-      imgs[idx].y = (ir.top-lr.top)/lr.height*100;
-      imgs[idx].w = ir.width/lr.width*100;
-      imgs[idx].h = ir.height/lr.height*100;
+      imgs[idx].x = parseFloat(item.style.left);
+      imgs[idx].y = parseFloat(item.style.top);
+      imgs[idx].w = parseFloat(item.style.width);
+      imgs[idx].h = parseFloat(item.style.height);
       setFImgs(id, imgs);
     }
   }
   _drag = null;
-});
-document.addEventListener('touchmove', e => {
-  if (!_drag || !e.touches.length) return;
-  const t = e.touches[0];
-  document.dispatchEvent(new MouseEvent('mousemove', { clientX: t.clientX, clientY: t.clientY }));
-}, { passive: true });
-document.addEventListener('touchend', () => {
-  if (_drag) document.dispatchEvent(new MouseEvent('mouseup'));
-});
+}
+document.addEventListener('mouseup', fiPointerEnd);
+document.addEventListener('touchend', fiPointerEnd);
 
 // ── TITLE IMAGE ───────────────────────────────────────────────
 function triggerTitleUpload() { document.getElementById('title-file-input').click(); }
@@ -2452,9 +2471,22 @@ document.addEventListener('keydown', e => {
 });
 
 // ── INIT ─────────────────────────────────────────────────────
+// ── STAGE SCALING (fit 1280×720 stage into viewport) ──────────
+function fitStage() {
+  const stage = document.getElementById('slides');
+  if (!stage) return;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const scale = Math.min(vw / 1280, vh / 720);
+  stage.style.transform = `scale(${scale})`;
+}
+window.addEventListener('resize', fitStage);
+window.addEventListener('orientationchange', () => setTimeout(fitStage, 100));
+document.addEventListener('fullscreenchange', () => setTimeout(fitStage, 100));
+
 loadData();
 buildSlides();
 showSlide(0);
+fitStage();
 
 // Preload images from IndexedDB, then re-render slides that have images
 (async () => {
