@@ -361,9 +361,9 @@ body.edit-mode #title-upload-zone { display: flex; }
 .cs-card-inner {
   flex: 1; padding: clamp(14px, 2vh, 22px) clamp(16px, 2.5vw, 28px);
   position: relative; z-index: 2;
-  overflow: hidden; /* no scroll — images are fixed to the stage, so text must
-                        never scroll underneath them. Use the A−/A+ toolbar
-                        to shrink text if it doesn't fit. */
+  overflow-y: auto; /* content can exceed the slide — scroll to reveal it.
+                        Images live IN this flow (see .free-img-layer below),
+                        so they scroll together with text and never cover it. */
 }
 
 /* Watermark wheel */
@@ -374,22 +374,26 @@ body.edit-mode #title-upload-zone { display: flex; }
   pointer-events: none; z-index: 1;
 }
 
-/* ── FREE-POSITION IMAGES ────────────────────── */
-/* ── FREE-POSITION IMAGES (on fixed 1280×720 stage) ───────────
-   Coordinates are % of the fixed stage, so they're identical on every device.
-   The stage scales as a whole → images never shift relative to the slide. */
+/* ── FLOW-ANCHORED IMAGES ─────────────────────
+   Images sit IN the scrollable text flow (not floating above it), so they
+   scroll together with the text and can never end up covering it. Since the
+   whole slide is now a fixed 1280×720 stage that scales as a single unit,
+   percentage sizing within this flow is also identical on every device. */
 .free-img-layer {
-  position: absolute; inset: 0;
-  pointer-events: none; z-index: 12;
+  position: static;
+  display: flex; flex-wrap: wrap; gap: 14px;
+  align-items: flex-start;
+  margin-top: 16px;
 }
 .fi-item {
-  position: absolute;
-  cursor: move;
+  position: relative;
+  width: 40%;
+  max-width: 100%;
   user-select: none;
-  pointer-events: auto;
+  flex: 0 0 auto;
 }
 .fi-item img {
-  width: 100%; height: 100%;
+  width: 100%; height: auto;
   object-fit: contain; display: block;
   border-radius: 6px;
   box-shadow: 0 3px 14px rgba(0,0,0,.22);
@@ -406,16 +410,22 @@ body.edit-mode #title-upload-zone { display: flex; }
   box-shadow: 0 2px 6px rgba(0,0,0,.3);
 }
 body.edit-mode .fi-del { display: flex; }
-/* Resize handle — bottom-right corner */
-.fi-handle {
-  position: absolute; bottom: -8px; right: -8px;
-  width: 18px; height: 18px;
-  background: var(--gold); border-radius: 4px;
-  cursor: se-resize; border: 2px solid white;
-  box-shadow: 0 1px 4px rgba(0,0,0,.3);
-  display: none; z-index: 3;
+/* Size/align controls — bottom bar, shown on hover in edit mode */
+.fi-sizebar {
+  position: absolute; bottom: 6px; left: 50%;
+  transform: translateX(-50%);
+  display: none; gap: 4px;
+  background: rgba(0,0,0,.62); backdrop-filter: blur(6px);
+  border-radius: 8px; padding: 4px 6px; z-index: 3;
 }
-body.edit-mode .fi-handle { display: block; }
+body.edit-mode .fi-item:hover .fi-sizebar { display: flex; }
+.fi-sizebar button {
+  background: rgba(255,255,255,.15); color: white;
+  border: none; border-radius: 5px; width: 26px; height: 24px;
+  font-size: 13px; font-weight: 700; cursor: pointer; line-height: 1;
+  font-family: 'DM Sans', sans-serif;
+}
+.fi-sizebar button:hover { background: var(--gold); color: var(--blue); }
 body.edit-mode .fi-item { outline: 2px dashed transparent; outline-offset: 3px; transition: outline-color .15s; }
 body.edit-mode .fi-item:hover { outline-color: var(--gold); }
 /* Add button — only visible on the ACTIVE slide, and only in edit mode */
@@ -956,22 +966,20 @@ function loadData() {
   });
   try { data = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { data = {}; }
 
-  // Migrate image metadata to the fixed-stage model {x,y,w,h} (% of 1280×720).
-  // Handles both very old {x,y,w,h}-only entries and the interim {width,align}.
+  // Migrate image metadata to the flow-anchored model {width, align}.
+  // Handles both the old absolute-stage {x,y,w,h} and any broken entries.
   let migrated = false;
   Object.keys(data).forEach(k => {
     if (k.startsWith('fimgs_') && Array.isArray(data[k])) {
       const cleaned = [];
-      data[k].forEach((m, i) => {
+      data[k].forEach(m => {
         if (!m || !m.imgId) { migrated = true; return; } // drop inline {src}/broken
-        if (typeof m.x === 'number' && typeof m.y === 'number'
-            && typeof m.w === 'number' && typeof m.h === 'number') {
-          cleaned.push({ imgId: m.imgId, x: m.x, y: m.y, w: m.w, h: m.h }); // already stage format
+        if (typeof m.width === 'number' && m.align) {
+          cleaned.push({ imgId: m.imgId, width: m.width, align: m.align }); // already flow format
         } else {
-          // Interim {width,align} or missing coords → give a sensible stage spot
-          const w = m.width || 34;
-          const off = i * 3;
-          cleaned.push({ imgId: m.imgId, x: 8 + off, y: 40 + off, w, h: w });
+          // Old {x,y,w,h} stage format → convert to a flow width, default left align
+          const width = Math.max(15, Math.min(100, m.w || 40));
+          cleaned.push({ imgId: m.imgId, width, align: 'flex-start' });
           migrated = true;
         }
       });
@@ -2059,13 +2067,13 @@ function buildSlides() {
                 onkeyup="ftUpdateState('${a.id}')"
                 onmouseup="ftUpdateState('${a.id}')"
               >${savedContent}</div>
+              ${buildFImgLayer(a.id)}
             </div>
             <div class="cs-watermark">${wheelSvg('currentColor','100%')}</div>
             ${buildFImgAddBtn(a.id)}
           </div>
         </div>
-        <div class="slide-footer">RC Riesa-Elbland</div>
-        ${buildFImgLayer(a.id)}`;
+        <div class="slide-footer">RC Riesa-Elbland</div>`;
     }
     container.appendChild(s);
   });
@@ -2175,7 +2183,7 @@ function ftUpdateState(id) {
 }
 
 // ── FREE-POSITION IMAGES (multiple per slide, drag + resize) ──
-let _drag = null; // active drag/resize state (fixed-stage coordinates)
+// (no drag state needed — images live in the flow, sized via fiResize/fiAlign)
 
 // ── IMAGE STORAGE via IndexedDB (localStorage is too small, ~5MB) ──
 // Image blobs (base64) live in IndexedDB (hundreds of MB available).
@@ -2248,21 +2256,41 @@ function buildFImgLayer(agendaId) {
   const items = imgs.map((img, idx) => {
     const src = img.imgId ? (_imgCache[img.imgId] || '') : (img.src || '');
     if (!src) return ''; // no resolvable image → skip
-    const x = img.x ?? 8, y = img.y ?? 40, w = img.w ?? 34, h = img.h ?? 34;
+    const width = img.width || 40; // % of the text column
+    const align = img.align || 'flex-start';
     return `
-    <div class="fi-item" id="fi-${agendaId}-${idx}"
-      style="left:${x.toFixed(2)}%;top:${y.toFixed(2)}%;width:${w.toFixed(2)}%;height:${h.toFixed(2)}%"
-      onmousedown="fiStartDrag(event,'${agendaId}',${idx})"
-      ontouchstart="fiStartDragT(event,'${agendaId}',${idx})">
+    <div class="fi-item" id="fi-${agendaId}-${idx}" style="width:${width}%;align-self:${align}">
       <img src="${src}" draggable="false" alt=""/>
-      <button class="fi-del" onclick="deleteFImg('${agendaId}',${idx});event.stopPropagation()" ontouchend="deleteFImg('${agendaId}',${idx});event.stopPropagation()">✕</button>
-      <div class="fi-handle"
-        onmousedown="fiStartResize(event,'${agendaId}',${idx});event.stopPropagation()"
-        ontouchstart="fiStartResizeT(event,'${agendaId}',${idx});event.stopPropagation()"></div>
+      <button class="fi-del" onclick="deleteFImg('${agendaId}',${idx})">✕</button>
+      <div class="fi-sizebar">
+        <button onclick="fiResize('${agendaId}',${idx},-8)" title="Kleiner">−</button>
+        <button onclick="fiAlign('${agendaId}',${idx},'flex-start')" title="Links">⬅</button>
+        <button onclick="fiAlign('${agendaId}',${idx},'center')" title="Mitte">◼</button>
+        <button onclick="fiAlign('${agendaId}',${idx},'flex-end')" title="Rechts">➡</button>
+        <button onclick="fiResize('${agendaId}',${idx},8)" title="Größer">+</button>
+      </div>
     </div>`;
   }).join('');
 
   return `<div class="free-img-layer" id="fil-${agendaId}">${items}</div>`;
+}
+
+// Resize image by delta % (clamped 15–100)
+function fiResize(id, idx, delta) {
+  const imgs = getFImgs(id);
+  if (!imgs[idx]) return;
+  imgs[idx].width = Math.max(15, Math.min(100, (imgs[idx].width || 40) + delta));
+  setFImgs(id, imgs);
+  refreshFImgLayer(id);
+}
+
+// Align image within the row (left / center / right)
+function fiAlign(id, idx, align) {
+  const imgs = getFImgs(id);
+  if (!imgs[idx]) return;
+  imgs[idx].align = align;
+  setFImgs(id, imgs);
+  refreshFImgLayer(id);
 }
 
 // Build the fixed "add image" button (stays put, does NOT scroll)
@@ -2336,14 +2364,10 @@ function compressAndAddFImg(id, file) {
           return;
         }
 
-        // New image: place at a sensible default spot (lower-left area),
-        // sized by aspect ratio. Coordinates are % of the fixed 1280×720 stage.
+        // New image: added to the text flow at default width — it flows
+        // right after the current content and scrolls together with it.
         const imgs = getFImgs(id);
-        const ratio = h0 / w0;               // height/width
-        const stageW = 34;                   // % of stage width
-        const stageH = Math.max(12, Math.min(70, stageW * ratio * (1280/720))); // keep aspect on 16:9 stage
-        const off = imgs.length * 3;
-        imgs.push({ imgId, x: 8 + off, y: 40 + off, w: stageW, h: stageH });
+        imgs.push({ imgId, width: 40, align: 'flex-start' });
         data['fimgs_'+id] = imgs;
         saveData(); // metadata is tiny, always fits
 
@@ -2367,73 +2391,8 @@ async function deleteFImg(id, idx) {
   refreshFImgLayer(id);
 }
 
-// ── DRAG & RESIZE (on the fixed 1280×720 stage) ───────────────
-// The stage is scaled by `fitStage()`; we read the layer's on-screen rect
-// (already scaled) so pointer deltas map correctly to stage-% coordinates.
-function fiPointerStart(e, id, idx, type) {
-  if (!editMode) return;
-  const layer = document.getElementById('fil-'+id);
-  const item  = document.getElementById(`fi-${id}-${idx}`);
-  if (!layer || !item) return;
-  const lr = layer.getBoundingClientRect();
-  const imgs = getFImgs(id);
-  const m = imgs[idx]; if (!m) return;
-  _drag = {
-    type, id, idx,
-    lw: lr.width, lh: lr.height,           // scaled layer size in px
-    cx: e.clientX, cy: e.clientY,
-    ox: m.x ?? 8, oy: m.y ?? 40, ow: m.w ?? 34, oh: m.h ?? 34,
-  };
-  if (type === 'move') item.style.cursor = 'grabbing';
-}
-function fiStartDrag(e, id, idx)   { e.preventDefault(); e.stopPropagation(); fiPointerStart(e, id, idx, 'move'); }
-function fiStartResize(e, id, idx) { e.preventDefault(); e.stopPropagation(); fiPointerStart(e, id, idx, 'resize'); }
-function fiStartDragT(e, id, idx)  { if (!e.touches.length) return; e.stopPropagation(); const t=e.touches[0]; fiPointerStart({clientX:t.clientX,clientY:t.clientY}, id, idx, 'move'); }
-function fiStartResizeT(e, id, idx){ if (!e.touches.length) return; e.stopPropagation(); const t=e.touches[0]; fiPointerStart({clientX:t.clientX,clientY:t.clientY}, id, idx, 'resize'); }
-
-document.addEventListener('mousemove', e => { if (_drag) fiPointerMove(e.clientX, e.clientY); });
-document.addEventListener('touchmove', e => {
-  if (_drag && e.touches.length) { fiPointerMove(e.touches[0].clientX, e.touches[0].clientY); }
-}, { passive: true });
-
-function fiPointerMove(cx, cy) {
-  const item = document.getElementById(`fi-${_drag.id}-${_drag.idx}`);
-  if (!item) return;
-  // Convert px delta → % of stage (layer rect is already scaled, so this is correct)
-  const dxPct = (cx - _drag.cx) / _drag.lw * 100;
-  const dyPct = (cy - _drag.cy) / _drag.lh * 100;
-  if (_drag.type === 'move') {
-    const nx = Math.max(0, Math.min(100 - _drag.ow, _drag.ox + dxPct));
-    const ny = Math.max(0, Math.min(100 - _drag.oh, _drag.oy + dyPct));
-    item.style.left = nx.toFixed(2) + '%';
-    item.style.top  = ny.toFixed(2) + '%';
-  } else {
-    const nw = Math.max(8, Math.min(100, _drag.ow + dxPct));
-    const nh = Math.max(6, Math.min(100, _drag.oh + dyPct));
-    item.style.width  = nw.toFixed(2) + '%';
-    item.style.height = nh.toFixed(2) + '%';
-  }
-}
-
-function fiPointerEnd() {
-  if (!_drag) return;
-  const { id, idx } = _drag;
-  const item = document.getElementById(`fi-${id}-${idx}`);
-  if (item) {
-    item.style.cursor = 'move';
-    const imgs = getFImgs(id);
-    if (imgs[idx]) {
-      imgs[idx].x = parseFloat(item.style.left);
-      imgs[idx].y = parseFloat(item.style.top);
-      imgs[idx].w = parseFloat(item.style.width);
-      imgs[idx].h = parseFloat(item.style.height);
-      setFImgs(id, imgs);
-    }
-  }
-  _drag = null;
-}
-document.addEventListener('mouseup', fiPointerEnd);
-document.addEventListener('touchend', fiPointerEnd);
+// (drag/resize removed — images now live in the text flow and use the
+// size/align buttons in .fi-sizebar instead; see fiResize/fiAlign above)
 
 // ── TITLE IMAGE ───────────────────────────────────────────────
 function triggerTitleUpload() { document.getElementById('title-file-input').click(); }
