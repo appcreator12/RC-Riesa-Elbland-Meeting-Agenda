@@ -361,7 +361,9 @@ body.edit-mode #title-upload-zone { display: flex; }
 .cs-card-inner {
   flex: 1; padding: clamp(14px, 2vh, 22px) clamp(16px, 2.5vw, 28px);
   position: relative; z-index: 2;
-  overflow-y: auto;
+  overflow: hidden; /* no scroll — images are fixed to the stage, so text must
+                        never scroll underneath them. Use the A−/A+ toolbar
+                        to shrink text if it doesn't fit. */
 }
 
 /* Watermark wheel */
@@ -983,7 +985,15 @@ function loadData() {
 function saveData() {
   AGENDA.forEach(a => {
     const el = document.getElementById('content-'+a.id);
-    if (el) data['content_'+a.id] = el.innerHTML;
+    if (el) {
+      data['content_'+a.id] = el.innerHTML;
+      // Persist element-level styles (set via the format toolbar) — these live
+      // on the wrapper element itself, not in innerHTML, so must be saved separately.
+      if (el.style.fontSize) data['fontsize_'+a.id] = el.style.fontSize;
+      else delete data['fontsize_'+a.id];
+      if (el.style.fontFamily) data['fontfamily_'+a.id] = el.style.fontFamily;
+      else delete data['fontfamily_'+a.id];
+    }
   });
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(data));
@@ -2006,6 +2016,12 @@ function buildSlides() {
 
     } else {
       const savedContent = data['content_'+a.id] || '';
+      const savedFontSize = data['fontsize_'+a.id] || '';
+      const savedFontFamily = data['fontfamily_'+a.id] || '';
+      const contentStyle = [
+        savedFontSize ? `font-size:${savedFontSize}` : '',
+        savedFontFamily ? `font-family:${savedFontFamily}` : '',
+      ].filter(Boolean).join(';');
       s.innerHTML = `${hdrHTML}
         <div class="cs-body">
           <div class="cs-subtitle">${a.sub}</div>
@@ -2038,6 +2054,7 @@ function buildSlides() {
               <div class="editable-content" id="content-${a.id}"
                 contenteditable="false"
                 data-placeholder="Hier Notizen, Tagesordnungspunkte oder Inhalte eintragen …"
+                ${contentStyle ? `style="${contentStyle}"` : ''}
                 onfocus="ftUpdateState('${a.id}')"
                 onkeyup="ftUpdateState('${a.id}')"
                 onmouseup="ftUpdateState('${a.id}')"
@@ -2109,6 +2126,7 @@ function ftFont(id, fontName) {
   if (!el || !editMode) return;
   el.style.fontFamily = fontName;
   el.focus();
+  saveData();
 }
 
 function ftSize(id, delta) {
@@ -2126,6 +2144,8 @@ function ftSize(id, delta) {
     el.style.fontSize = Math.max(10, cur + delta) + 'px';
   }
   ftUpdateState(id);
+  saveData(); // persist immediately — font-size lives on the element itself,
+              // not in innerHTML, so it needs an explicit save (see saveData()).
 }
 
 function ftAlign(id, align) {
