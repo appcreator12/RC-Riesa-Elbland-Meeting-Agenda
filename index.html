@@ -1731,11 +1731,11 @@ function daysUntilBirthday(day, month) {
   const yr = today.getFullYear();
   let bday = new Date(yr, month-1, day);
   let diff = Math.round((bday - today) / 86400000);
-  if (diff < -14) { bday = new Date(yr+1, month-1, day); diff = Math.round((bday - today) / 86400000); }
+  if (diff < -28) { bday = new Date(yr+1, month-1, day); diff = Math.round((bday - today) / 86400000); }
   return diff;
 }
 
-// ── BIRTHDAY DISPLAY (±14 day window, with photos) ────────────
+// ── BIRTHDAY DISPLAY (4 weeks past / 2 weeks future window, with photos) ──
 function renderBirthdays(list) {
   if (!list || list.length === 0) {
     return `<div class="empty-state">
@@ -1747,10 +1747,10 @@ function renderBirthdays(list) {
     </div>`;
   }
 
-  // Calculate days until/since each birthday and filter ±14 days
+  // Calculate days until/since each birthday and filter -28..+14 days
   const windowed = list
     .map(b => ({ ...b, diff: daysUntilBirthday(b.day, b.month) }))
-    .filter(b => b.diff >= -14 && b.diff <= 14)
+    .filter(b => b.diff >= -28 && b.diff <= 14)
     .sort((a,b) => a.diff - b.diff);
 
   if (!windowed.length) {
@@ -1764,7 +1764,7 @@ function renderBirthdays(list) {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
       </svg>
-      <p>Keine Geburtstage in den nächsten/letzten 14 Tagen.</p>
+      <p>Keine Geburtstage im Anzeigezeitraum.</p>
       ${next ? `<span class="hint">Nächster: ${next.name} in ${next.diff} Tagen (${next.day}. ${MONTHS[next.month-1]})</span>` : ''}
     </div>`;
   }
@@ -1799,11 +1799,11 @@ function renderBirthdays(list) {
     today.forEach(b => { html += bdayCard(b, 'today'); });
   }
   if (upcoming.length) {
-    html += `<div class="data-section-label" style="margin-top:${today.length?'10px':'0'}">Bevorstehend — nächste 14 Tage</div>`;
+    html += `<div class="data-section-label" style="margin-top:${today.length?'10px':'0'}">Bevorstehend — nächste 2 Wochen</div>`;
     upcoming.forEach(b => { html += bdayCard(b, 'this-month'); });
   }
   if (past.length) {
-    html += `<div class="data-section-label" style="margin-top:8px;opacity:.6">Vergangene — letzte 14 Tage</div>`;
+    html += `<div class="data-section-label" style="margin-top:8px;opacity:.6">Vergangene — letzte 4 Wochen</div>`;
     past.slice().reverse().forEach(b => { html += bdayCard(b, 'bday-past'); });
   }
   return html;
