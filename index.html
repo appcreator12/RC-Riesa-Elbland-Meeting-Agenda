@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>RC Riesa-Elbland · Vereinssitzung</title>
+<title>RC Riesa-Elbland · Clubmeeting</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -374,26 +374,30 @@ body.edit-mode #title-upload-zone { display: flex; }
   pointer-events: none; z-index: 1;
 }
 
-/* ── FLOW-ANCHORED IMAGES ─────────────────────
-   Images sit IN the scrollable text flow (not floating above it), so they
-   scroll together with the text and can never end up covering it. Since the
-   whole slide is now a fixed 1280×720 stage that scales as a single unit,
-   percentage sizing within this flow is also identical on every device. */
+/* ── FREE-POSITION IMAGES, ANCHORED TO CONTENT ────────────────
+   Images are absolutely positioned within `.cs-content-stack` — a wrapper
+   that grows to the FULL height of the text (not just the visible viewport)
+   and lives INSIDE the scrollable `.cs-card-inner`. Because the image layer's
+   coordinate space is the content itself, images can be dragged to ANY point
+   on the slide, yet they scroll together with the text and stay anchored to
+   whatever content they were placed next to — never desyncing or covering
+   text that scrolls into view later. */
+.cs-content-stack {
+  position: relative;
+  min-height: 100%;
+}
 .free-img-layer {
-  position: static;
-  display: flex; flex-wrap: wrap; gap: 14px;
-  align-items: flex-start;
-  margin-top: 16px;
+  position: absolute; inset: 0;
+  pointer-events: none; z-index: 12;
 }
 .fi-item {
-  position: relative;
-  width: 40%;
-  max-width: 100%;
+  position: absolute;
+  cursor: move;
   user-select: none;
-  flex: 0 0 auto;
+  pointer-events: auto;
 }
 .fi-item img {
-  width: 100%; height: auto;
+  width: 100%; height: 100%;
   object-fit: contain; display: block;
   border-radius: 6px;
   box-shadow: 0 3px 14px rgba(0,0,0,.22);
@@ -410,22 +414,16 @@ body.edit-mode #title-upload-zone { display: flex; }
   box-shadow: 0 2px 6px rgba(0,0,0,.3);
 }
 body.edit-mode .fi-del { display: flex; }
-/* Size/align controls — bottom bar, shown on hover in edit mode */
-.fi-sizebar {
-  position: absolute; bottom: 6px; left: 50%;
-  transform: translateX(-50%);
-  display: none; gap: 4px;
-  background: rgba(0,0,0,.62); backdrop-filter: blur(6px);
-  border-radius: 8px; padding: 4px 6px; z-index: 3;
+/* Resize handle — bottom-right corner */
+.fi-handle {
+  position: absolute; bottom: -8px; right: -8px;
+  width: 18px; height: 18px;
+  background: var(--gold); border-radius: 4px;
+  cursor: se-resize; border: 2px solid white;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+  display: none; z-index: 3;
 }
-body.edit-mode .fi-item:hover .fi-sizebar { display: flex; }
-.fi-sizebar button {
-  background: rgba(255,255,255,.15); color: white;
-  border: none; border-radius: 5px; width: 26px; height: 24px;
-  font-size: 13px; font-weight: 700; cursor: pointer; line-height: 1;
-  font-family: 'DM Sans', sans-serif;
-}
-.fi-sizebar button:hover { background: var(--gold); color: var(--blue); }
+body.edit-mode .fi-handle { display: block; }
 body.edit-mode .fi-item { outline: 2px dashed transparent; outline-offset: 3px; transition: outline-color .15s; }
 body.edit-mode .fi-item:hover { outline-color: var(--gold); }
 /* Add button — only visible on the ACTIVE slide, and only in edit mode */
@@ -1902,7 +1900,7 @@ function buildSlides() {
       <div class="title-content">
         <div class="title-accent-line"></div>
         <div class="title-eyebrow">Rotary Club · Riesa-Elbland</div>
-        <div class="title-main">Vereins&shy;sitzung</div>
+        <div class="title-main">Club&shy;meeting</div>
         <div class="title-divider"></div>
         <div class="title-date-row">
           <div class="title-date-pill">${TODAY}</div>
