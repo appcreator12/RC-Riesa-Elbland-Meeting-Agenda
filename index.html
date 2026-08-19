@@ -2104,6 +2104,13 @@ function showSlide(n) {
       bdEl.innerHTML = renderBirthdays(data.birthdays) +
         `<div class="data-watermark">${wheelSvg('currentColor','100%')}</div>`;
     }
+    // Title slide date — recompute live in case the tab has been open across
+    // midnight/days (TODAY was only calculated once at initial page load).
+    const datePill = document.querySelector('.title-date-pill');
+    if (datePill && slides[n]?.contains(datePill)) {
+      const liveNow = new Date();
+      datePill.textContent = `${DAYS[liveNow.getDay()]}, ${liveNow.getDate()}. ${MONTHS[liveNow.getMonth()]} ${liveNow.getFullYear()}`;
+    }
   }
 }
 function navigate(dir) {
