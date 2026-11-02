@@ -423,10 +423,11 @@ body.edit-mode .canvas {
 .tb-content ol { padding-left: 1.7em; }
 /* Own list markers instead of the browser's: they take over the formatting of the
    first character of the line (bold, italic, underline, colour, size, font) — like PowerPoint */
-.tb-content li { margin: .1em 0; list-style: none; position: relative; }
+.tb-content li { margin: .1em 0; list-style: none; }
 .tb-content li::before {
   content: attr(data-n);
-  position: absolute; right: 100%; top: 0; margin-right: .35em;
+  display: inline-block; box-sizing: border-box;
+  width: 3em; margin-left: -3em; padding-right: .35em; text-align: right;   /* sits on the same baseline as the text */
   white-space: nowrap; pointer-events: none;
   font-weight: var(--mk-w, inherit); font-style: var(--mk-i, inherit);
   text-decoration: var(--mk-d, none); color: var(--mk-c, inherit);
@@ -1009,7 +1010,7 @@ const LS_KEY = 'rc_meeting_v5';
 
 function newId() { return 'o' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
 function defaultTextObj() {
-  return { id: newId(), type: 'text', x: MARGIN, y: 28, w: CANVAS_W - 2 * MARGIN, h: CANVAS_H - 56, html: '' };
+  return { id: newId(), type: 'text', x: MARGIN, y: 28, w: CANVAS_W - 2 * MARGIN, h: CANVAS_H - 56, html: '', auto: true };
 }
 function slideObjs(sid) {
   if (!Array.isArray(data['objs_' + sid])) data['objs_' + sid] = [defaultTextObj()];
@@ -2248,6 +2249,11 @@ function insertTextBox(sid) {
   const objs = slideObjs(sid);
   const k = objs.filter(o => o.type === 'text').length % 5;
   const o = { id: newId(), type: 'text', x: 340 + k * 24, y: 200 + k * 24, w: 600, h: 150, html: '' };
+  const main = objs.find(t => t.type === 'text' && t.html && t.html.replace(/<[^>]*>/g, '').trim());
+  const house = houseTextStyle(null);
+  const fs = (main && main.fs) || house.fs;
+  if (fs && Math.abs(fs - DEFAULT_PT * PT) > 0.5) o.fs = fs;
+  if ((main && main.ff) || house.ff) o.ff = (main && main.ff) || house.ff;
   objs.push(o);
   renderCanvas(sid);
   selectObj(sid, o.id);
@@ -2471,6 +2477,13 @@ function expandToWord() {
   s.removeAllRanges(); s.addRange(r);
 }
 
+function selectsWholeBox(t) {
+  const s = getSelection();
+  if (!s.rangeCount || s.isCollapsed) return false;
+  const norm = x => x.replace(/[\s\u200B]/g, '');
+  const all = norm(t.box.textContent);
+  return all.length > 0 && norm(s.toString()) === all;
+}
 function withText(fn, opts = {}) {
   const t = textTarget();
   if (!t) { toast('Bitte zuerst ein Textfeld anklicken'); return; }
@@ -2703,7 +2716,7 @@ function fillNumberPop() {
 function setFontSizePx(px) {
   px = Math.round(clamp(px, 6, 400) * 100) / 100;
   withText(t => {
-    if (t.mode === 'all') {
+    if (t.mode === 'all' || selectsWholeBox(t)) {      // whole text → change the box's base size (line spacing follows)
       stripStyle(t.box, 'font-size');
       t.box.querySelectorAll('font[size]').forEach(f => f.removeAttribute('size'));
       t.o.fs = px; applyBoxStyle(t);
@@ -2759,7 +2772,7 @@ function growShrink(dir) {
 }
 function setFontFamily(css) {
   withText(t => {
-    if (t.mode === 'all') {
+    if (t.mode === 'all' || selectsWholeBox(t)) {
       stripStyle(t.box, 'font-family');
       t.box.querySelectorAll('font[face]').forEach(f => f.removeAttribute('face'));
       t.o.ff = css; applyBoxStyle(t);
@@ -3211,6 +3224,55 @@ async function fixImageAspects() {
   }
   return changed;
 }
+// ── Consistent text style across slides ──────────────────────
+// The text size/font most used on the other text slides (weighted by amount of text)
+function houseTextStyle(excludeSid) {
+  const sizes = {}, fams = {};
+  AGENDA.filter(a => a.type === 'normal' && a.id !== excludeSid).forEach(a => {
+    document.querySelectorAll(`#canvas-${a.id} .tb-content`).forEach(box => {
+      const tw = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = tw.nextNode())) {
+        const len = n.textContent.replace(/\u200B/g, '').trim().length;
+        if (!len) continue;
+        const cs = getComputedStyle(n.parentElement);
+        sizes[cs.fontSize] = (sizes[cs.fontSize] || 0) + len;
+      }
+    });
+    slideObjs(a.id).forEach(o => { if (o.type === 'text' && o.ff && o.html) fams[o.ff] = (fams[o.ff] || 0) + o.html.length; });
+  });
+  const top = m => (Object.entries(m).sort((x, y) => y[1] - x[1])[0] || [])[0];
+  const fs = parseFloat(top(sizes));
+  return { fs: fs > 0 ? Math.round(fs * 100) / 100 : null, ff: top(fams) || null };
+}
+function hasOwnSizes(o) { return !!o.fs || /font-size/i.test(o.html || ''); }
+// Text boxes that still use the default size follow the size of the other slides
+// (runs once per slide; afterwards the user's own choice is kept)
+function harmonizeTextStyles() {
+  data._autoStyle = data._autoStyle || {};
+  let changed = false;
+  AGENDA.filter(a => a.type === 'normal').forEach(a => {
+    const objs = slideObjs(a.id);
+    const targets = objs.filter(o => o.type === 'text' && !hasOwnSizes(o) &&
+                                     (o.auto || (a.id === 'vorstand' && !data._autoStyle[a.id])));
+    if (!targets.length) return;
+    const house = houseTextStyle(a.id);
+    if (!house.fs) {                                  // nothing to compare with yet
+      targets.forEach(o => { if (o.html && o.html.replace(/<[^>]*>/g, '').trim()) { delete o.auto; changed = true; } });
+      return;
+    }
+    targets.forEach(o => {
+      if (Math.abs(house.fs - DEFAULT_PT * PT) > 0.5) o.fs = house.fs;
+      if (house.ff && !o.ff) o.ff = house.ff;
+      delete o.auto;
+    });
+    data._autoStyle[a.id] = 1;
+    renderCanvas(a.id);
+    changed = true;
+  });
+  if (changed) saveData();
+}
+
 // Remove picture blobs that no slide references any more (runs once at start-up)
 async function gcImages() {
   try {
@@ -3454,6 +3516,7 @@ poke();
     const changed = await fixImageAspects();
     AGENDA.filter(a => a.type === 'normal').forEach(a => renderCanvas(a.id));
     if (changed) saveData();
+    harmonizeTextStyles();
     gcImages();
   } catch (e) { console.warn('Image preload failed:', e); }
 })();
