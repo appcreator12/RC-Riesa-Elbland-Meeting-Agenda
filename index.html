@@ -419,9 +419,20 @@ body.edit-mode .canvas {
 .tb-content::-webkit-scrollbar { width: 6px; }
 .tb-content::-webkit-scrollbar-thumb { background: rgba(0,63,135,.18); border-radius: 3px; }
 .tb-content p, .tb-content div { margin: 0; }
-.tb-content ul, .tb-content ol { margin: .15em 0 .15em .2em; padding-left: 1.15em; }
-.tb-content li { margin: .1em 0; }
-.tb-content ul li::marker { color: var(--gold); }
+.tb-content ul, .tb-content ol { margin: .15em 0 .15em .2em; padding-left: 1.2em; }
+.tb-content ol { padding-left: 1.7em; }
+/* Own list markers instead of the browser's: they take over the formatting of the
+   first character of the line (bold, italic, underline, colour, size, font) — like PowerPoint */
+.tb-content li { margin: .1em 0; list-style: none; position: relative; }
+.tb-content li::before {
+  content: attr(data-n);
+  position: absolute; right: 100%; top: 0; margin-right: .35em;
+  white-space: nowrap; pointer-events: none;
+  font-weight: var(--mk-w, inherit); font-style: var(--mk-i, inherit);
+  text-decoration: var(--mk-d, none); color: var(--mk-c, inherit);
+  font-size: var(--mk-s, inherit); font-family: var(--mk-f, inherit);
+}
+.tb-content ul > li::before { color: var(--mk-c, var(--gold)); }
 .tb-content ol ol { list-style-type: lower-alpha; }
 .tb-content ol ol ol { list-style-type: lower-roman; }
 .tb-content ul ul { list-style-type: circle; }
@@ -2100,7 +2111,7 @@ function renderCanvas(sid) {
   const cv = document.getElementById('canvas-' + sid);
   if (!cv) return;
   cv.innerHTML = slideObjs(sid).map(objHTML).join('') + '<div class="guide gv"></div><div class="guide gh"></div>';
-  cv.querySelectorAll('.tb-content').forEach(updateEmpty);
+  cv.querySelectorAll('.tb-content').forEach(b => { updateEmpty(b); refreshMarkers(b); });
   if (sel && sel.sid === sid) {
     const el = document.getElementById(sel.id);
     if (el) el.classList.add('selected'); else sel = null;
@@ -2480,6 +2491,7 @@ function withText(fn, opts = {}) {
   fn(t);
   _pendingTextSnap = null;
   tidy(t.box);
+  refreshMarkers(t.box);
   commitTextFromBox(t.box);
   updateEmpty(t.box);
   if (t.mode === 'all') { s.removeAllRanges(); t.box.blur(); editingBox = null; }
@@ -2493,6 +2505,66 @@ function fmtBlock(cmd) {
     // Numbering button on a numbered line → remove its number, keep the rest of the list counting on
     if (cmd === 'insertOrderedList' && t.mode === 'range' && unnumberItem(t.box)) return;
     document.execCommand(cmd, false, null);
+  });
+}
+
+// ── LIST MARKERS (numbers/bullets formatted like the first character of the line) ──
+const ROMAN = [[1000,'m'],[900,'cm'],[500,'d'],[400,'cd'],[100,'c'],[90,'xc'],[50,'l'],[40,'xl'],[10,'x'],[9,'ix'],[5,'v'],[4,'iv'],[1,'i']];
+function fmtListNumber(n, type) {
+  if (type === 'lower-alpha' || type === 'upper-alpha') {
+    if (n < 1) return String(n);
+    let out = '', x = n;
+    while (x > 0) { x--; out = String.fromCharCode(97 + x % 26) + out; x = Math.floor(x / 26); }
+    return type === 'upper-alpha' ? out.toUpperCase() : out;
+  }
+  if (type === 'lower-roman' || type === 'upper-roman') {
+    if (n < 1 || n > 3999) return String(n);
+    let out = '', x = n;
+    for (const [v, r] of ROMAN) while (x >= v) { out += r; x -= v; }
+    return type === 'upper-roman' ? out.toUpperCase() : out;
+  }
+  return String(n);
+}
+function listFormatOf(ol) {
+  if (ol.style.listStyleType) return ol.style.listStyleType;
+  let depth = 0;
+  for (let p = ol.parentElement; p && !p.classList.contains('tb-content'); p = p.parentElement) if (p.tagName === 'OL') depth++;
+  return ['decimal', 'lower-alpha', 'lower-roman'][depth % 3];
+}
+function firstTextIn(li) {
+  const list = li.parentElement;
+  const tw = document.createTreeWalker(li, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.textContent.replace(/\u200B/g, '').trim() && n.parentElement.closest('ol,ul') === list
+      ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP });
+  return tw.nextNode();
+}
+function refreshMarkers(box) {
+  if (!box || !box.querySelector('li')) return;
+  const boxColor = getComputedStyle(box).color;
+  box.querySelectorAll('li').forEach(li => {
+    const list = li.parentElement;
+    if (!list || (list.tagName !== 'OL' && list.tagName !== 'UL')) return;
+    const label = list.tagName === 'OL' ? fmtListNumber(itemNumber(li), listFormatOf(list)) + '.' : '•';
+    if (li.getAttribute('data-n') !== label) li.setAttribute('data-n', label);
+    const tn = firstTextIn(li);
+    const el = tn ? tn.parentElement : li;
+    const cs = getComputedStyle(el);
+    const deco = new Set();
+    for (let e = el; e && e !== list; e = e.parentElement) {
+      const d = getComputedStyle(e).textDecorationLine || '';
+      if (d.includes('underline')) deco.add('underline');
+      if (d.includes('line-through')) deco.add('line-through');
+    }
+    const props = {
+      '--mk-w': cs.fontWeight, '--mk-i': cs.fontStyle, '--mk-d': [...deco].join(' ') || 'none',
+      '--mk-s': cs.fontSize, '--mk-f': cs.fontFamily, '--mk-c': cs.color,
+    };
+    if (list.tagName === 'UL' && cs.color === boxColor) props['--mk-c'] = '';   // bullets stay gold
+    Object.entries(props).forEach(([k, v]) => {
+      if (li.style.getPropertyValue(k) === v) return;
+      if (v) li.style.setProperty(k, v); else li.style.removeProperty(k);
+    });
+    if (!li.getAttribute('style')) li.removeAttribute('style');
   });
 }
 
@@ -2771,6 +2843,7 @@ document.addEventListener('input', e => {
   const box = e.target.closest ? e.target.closest('.tb-content') : null;
   if (!box) return;
   if (_pendingTextSnap) { pushSnap(_pendingTextSnap); _pendingTextSnap = null; }
+  refreshMarkers(box);
   commitTextFromBox(box);
   updateEmpty(box);
 });
@@ -3050,7 +3123,7 @@ function navigate(dir) { showSlide(current + dir); }
 function toggleEdit(force) {
   const next = typeof force === 'boolean' ? force : !editMode;
   if (next === editMode) return;
-  if (!next) { blurText(); selectObj(null); closePops(); }
+  if (!next) { blurText(); selectObj(null); closePops(); try { getSelection().removeAllRanges(); } catch (e) {} }
   editMode = next;
   document.body.classList.toggle('edit-mode', editMode);
   document.body.classList.remove('idle');
