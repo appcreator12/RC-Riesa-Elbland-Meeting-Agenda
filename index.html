@@ -607,6 +607,26 @@ body.idle:not(.edit-mode) #fs-hint { opacity: 0 !important; pointer-events: none
 body.idle:not(.edit-mode) { cursor: none; }
 
 /* ── PDF IMPORT MODAL ────────────────────── */
+#pdf-modal {
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,10,30,.72); backdrop-filter: blur(6px);
+  display: none; align-items: center; justify-content: center; padding: 20px;
+}
+#pdf-modal.open { display: flex; }
+body.capturing .tb-content li::before { content: none !important; }
+body.capturing .title-img-bottom .img-blur { display: none !important; }
+.pdf-progress { padding: 10px 0 6px; }
+.pdf-bar { height: 6px; background: var(--light); border-radius: 3px; overflow: hidden; }
+#pdf-bar-fill { height: 100%; width: 0; background: var(--gold); transition: width .3s; }
+.pdf-done { font-size: 14px; color: var(--text); }
+.pdf-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; max-height: 260px; overflow-y: auto; padding: 2px; }
+.pdf-thumbs canvas { width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--light); box-shadow: 0 2px 6px rgba(16,42,90,.08); }
+.pdf-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.pdf-field input { height: 36px; border: 1px solid #D5DEEB; border-radius: 8px; padding: 0 10px; font: 500 14px 'DM Sans', sans-serif; color: var(--text); outline: none; }
+.pdf-field input:focus { border-color: var(--gold); }
+.pdf-hint { font-size: 12px; line-height: 1.5; color: var(--muted); }
+.pdf-err { font-size: 14px; color: #c0392b; font-weight: 600; }
+
 #import-modal {
   position: fixed; inset: 0; z-index: 300;
   background: rgba(0,10,30,.72);
@@ -854,6 +874,10 @@ body.idle:not(.edit-mode) { cursor: none; }
     <button class="tb-btn" onclick="toggleFullscreen()" title="Vollbild (F)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
     </button>
+    <button class="tb-btn" id="btn-protocol" onclick="openProtocol()" title="Alle Folien als Protokoll (PDF) speichern und per Mail senden">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+      <span class="tb-label-opt">Protokoll</span>
+    </button>
     <button class="tb-btn" onclick="exportData()" title="Export – Daten &amp; Bilder sichern">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     </button>
@@ -908,6 +932,24 @@ body.idle:not(.edit-mode) { cursor: none; }
 <div id="toast"></div>
 
 <div id="stage-wrap"><div id="slides"></div></div>
+
+<!-- Protokoll (PDF) dialog -->
+<div id="pdf-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>Protokoll als PDF</h2>
+      <button class="modal-close" onclick="closeProtocol()">✕</button>
+    </div>
+    <div class="modal-body" id="pdf-body"></div>
+    <div class="modal-foot" id="pdf-foot" style="display:none">
+      <button class="modal-btn secondary" onclick="downloadProtocol()">PDF speichern</button>
+      <div style="display:flex;gap:8px">
+        <button class="modal-btn secondary" id="pdf-mail" onclick="mailProtocol()">E-Mail öffnen</button>
+        <button class="modal-btn primary" id="pdf-share" onclick="shareProtocol()">✉︎ Per Mail senden</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- PDF Import Modal -->
 <div id="import-modal">
@@ -3385,6 +3427,7 @@ document.addEventListener('keydown', e => {
 
   if (mod && k === 's') { e.preventDefault(); saveDataWithFeedback(); return; }
   if (document.getElementById('import-modal').classList.contains('open')) return;
+  if (document.getElementById('pdf-modal').classList.contains('open')) { if (e.key === 'Escape') closeProtocol(); return; }
   if (inField) return;
 
   if (inText) {
@@ -3444,6 +3487,248 @@ document.addEventListener('keydown', e => {
 });
 
 // ══════════════════════════════════════════════════════════════
+//  PROTOKOLL: all slides → PDF → send by e-mail
+//  Each slide is rendered as it appears in the presentation (1 slide = 1 page,
+//  16:9). Text boxes with more text than fits get continuation pages, so the
+//  protocol always contains the complete text.
+// ══════════════════════════════════════════════════════════════
+const H2C_URL = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+let _pdfResult = null;            // { blob, file, name, pages }
+
+function loadScriptOnce(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[data-src="${src}"]`)?.dataset.ok) return resolve();
+    const s = document.createElement('script');
+    s.src = src; s.dataset.src = src; s.async = true;
+    s.onload = () => { s.dataset.ok = '1'; resolve(); };
+    s.onerror = () => { s.remove(); reject(new Error('load')); };
+    document.head.appendChild(s);
+  });
+}
+function protocolDateLabel() { return todayLabel(); }
+function protocolFileName() {
+  const d = new Date();
+  return `Protokoll_Clubmeeting_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.pdf`;
+}
+
+// ── minimal PDF writer: one JPEG per page (960 × 540 pt = 16:9 like PowerPoint) ──
+function pdfTextString(str) {
+  let hex = 'FEFF';
+  for (const ch of String(str)) {
+    const cp = ch.codePointAt(0);
+    if (cp > 0xFFFF) { const v = cp - 0x10000; hex += (0xD800 + (v >> 10)).toString(16).padStart(4, '0') + (0xDC00 + (v & 0x3FF)).toString(16).padStart(4, '0'); }
+    else hex += cp.toString(16).padStart(4, '0');
+  }
+  return '<' + hex.toUpperCase() + '>';
+}
+function buildPdf(pages, title) {
+  const enc = new TextEncoder();
+  const parts = []; let len = 0; const offs = [];
+  const push = x => { const b = typeof x === 'string' ? enc.encode(x) : x; parts.push(b); len += b.length; };
+  const obj = (n, body) => { offs[n] = len; push(`${n} 0 obj\n`); body(); push('\nendobj\n'); };
+  const W = 960, H = 540, N = pages.length;
+  push('%PDF-1.4\n%âãÏÓ\n');
+  obj(1, () => push('<< /Type /Catalog /Pages 2 0 R >>'));
+  obj(2, () => push(`<< /Type /Pages /Count ${N} /Kids [${pages.map((_, i) => `${4 + 3 * i} 0 R`).join(' ')}] >>`));
+  const d = new Date(), pad = v => String(v).padStart(2, '0');
+  const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  obj(3, () => push(`<< /Title ${pdfTextString(title)} /Author ${pdfTextString('Rotary Club Riesa-Elbland')} /Creator ${pdfTextString('Clubmeeting-App')} /CreationDate (D:${stamp}) >>`));
+  pages.forEach((p, i) => {
+    const n = 4 + 3 * i;
+    obj(n, () => push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im${i} ${n + 2} 0 R >> >> /Contents ${n + 1} 0 R >>`));
+    const cs = `q ${W} 0 0 ${H} 0 0 cm /Im${i} Do Q`;
+    obj(n + 1, () => push(`<< /Length ${cs.length} >>\nstream\n${cs}\nendstream`));
+    obj(n + 2, () => {
+      push(`<< /Type /XObject /Subtype /Image /Width ${p.w} /Height ${p.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.bytes.length} >>\nstream\n`);
+      push(p.bytes);
+      push('\nendstream');
+    });
+  });
+  const size = 4 + 3 * N, xref = len;
+  push(`xref\n0 ${size}\n0000000000 65535 f \n`);
+  for (let n = 1; n < size; n++) push(String(offs[n]).padStart(10, '0') + ' 00000 n \n');
+  push(`trailer\n<< /Size ${size} /Root 1 0 R /Info 3 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts, { type: 'application/pdf' });
+}
+function canvasToJpeg(canvas, q = 0.88) {
+  return new Promise(resolve => canvas.toBlob(async b => resolve(new Uint8Array(await b.arrayBuffer())), 'image/jpeg', q));
+}
+
+// Prepare the off-screen copy html2canvas renders: presentation look, one slide, real list markers
+function prepCloneForSlide(doc, idx, origSlide, contLabel) {
+  doc.body.classList.remove('edit-mode', 'idle');
+  const st = doc.createElement('style');
+  st.textContent = `
+    #topbar,.nav-btn,#toast,#fs-hint,#progress-bar,#import-modal,#pdf-modal,.rb-pop{display:none!important}
+    #stage-wrap{position:static!important;display:block!important;top:0!important;bottom:auto!important}
+    #slides{transform:none!important;box-shadow:none!important}
+    .slide{transition:none!important;display:none!important}
+    .tb-content li::before{content:none!important;display:none!important}
+    .title-img-bottom .img-blur{display:none!important}
+    .obj,.obj.selected{outline:none!important}
+    .hdl,.tb-grip,.guide{display:none!important}
+    .tb-content.is-empty::before{content:none!important}
+    .canvas{background-image:none!important}`;
+  doc.head.appendChild(st);
+  const sl = doc.getElementById('slide-' + idx);
+  // inline SVGs are drawn as images: give them their real colour (currentColor would turn black)
+  sl.querySelectorAll('svg').forEach(svg => {
+    const host = svg.parentElement;
+    if (host) svg.style.color = doc.defaultView.getComputedStyle(host).color;
+  });
+  sl.style.cssText += `;display:${getComputedStyle(origSlide).display}!important;opacity:1!important;transform:none!important;`;
+  // list numbers/bullets as real text (html2canvas cannot draw attr() pseudo content)
+  const origLis = origSlide.querySelectorAll('.tb-content li');
+  sl.querySelectorAll('.tb-content li').forEach((li, k) => {
+    const o = origLis[k]; if (!o) return;
+    const cs = getComputedStyle(o, '::before');
+    const mk = doc.createElement('span');
+    mk.textContent = o.getAttribute('data-n') || '';
+    mk.style.cssText = `display:inline-block;box-sizing:border-box;width:3em;margin-left:-3em;padding-right:.35em;text-align:right;white-space:nowrap;
+      font-weight:${cs.fontWeight};font-style:${cs.fontStyle};text-decoration:${cs.textDecorationLine};color:${cs.color};font-size:${cs.fontSize};font-family:${cs.fontFamily}`;
+    li.insertBefore(mk, li.firstChild);
+  });
+  if (contLabel) {
+    const pg = sl.querySelector('.slide-footer .pg');
+    if (pg) pg.textContent = pg.textContent + ' · ' + contLabel;
+  }
+}
+
+async function renderProtocolPages(onProgress) {
+  await loadScriptOnce(H2C_URL);
+  const wasEdit = document.body.classList.contains('edit-mode');
+  document.body.classList.remove('edit-mode', 'idle');
+  document.body.classList.add('capturing');
+  try { return await renderProtocolPagesInner(onProgress); }
+  finally {
+    document.body.classList.remove('capturing');
+    if (wasEdit) document.body.classList.add('edit-mode');
+    fitStage();
+  }
+}
+async function renderProtocolPagesInner(onProgress) {
+  try { await Promise.all([...document.fonts].map(f => f.load().catch(() => {}))); await document.fonts.ready; } catch (e) {}
+  const pill = document.querySelector('.title-date-pill'); if (pill) pill.textContent = todayLabel();
+  const slides = [...document.querySelectorAll('#slides .slide')];
+  const pages = [];
+  const scrolled = [];
+  for (let i = 0; i < slides.length; i++) {
+    const slide = slides[i];
+    slide.querySelectorAll('.data-list').forEach(l => { scrolled.push([l, l.scrollTop]); l.scrollTop = 0; });
+    const boxes = [...slide.querySelectorAll('.tb-content')];
+    boxes.forEach(b => scrolled.push([b, b.scrollTop]));
+    // how many pages does the longest text box need?
+    let steps = 1;
+    const stepOf = b => Math.max(40, b.clientHeight - parseFloat(getComputedStyle(b).fontSize) * 1.3);
+    boxes.forEach(b => {
+      const over = b.scrollHeight - b.clientHeight;
+      if (over > 4) steps = Math.max(steps, 1 + Math.ceil(over / stepOf(b)));
+    });
+    steps = Math.min(steps, 12);
+    for (let k = 0; k < steps; k++) {
+      boxes.forEach(b => { b.scrollTop = Math.min(k * stepOf(b), b.scrollHeight - b.clientHeight); });
+      onProgress && onProgress(i, slides.length, k, steps);
+      const canvas = await window.html2canvas(slide, {
+        scale: 1.5, width: STAGE_W, height: STAGE_H, windowWidth: STAGE_W, windowHeight: STAGE_H,
+        backgroundColor: '#ffffff', logging: false, useCORS: true, imageTimeout: 15000,
+        onclone: doc => prepCloneForSlide(doc, i, slide, k > 0 ? `Fortsetzung ${k + 1}/${steps}` : (steps > 1 ? `Teil 1/${steps}` : '')),
+      });
+      pages.push({ bytes: await canvasToJpeg(canvas), w: canvas.width, h: canvas.height, thumb: canvas });
+    }
+  }
+  scrolled.forEach(([el, top]) => { el.scrollTop = top; });
+  return pages;
+}
+
+function pdfModalSet(html) { document.getElementById('pdf-body').innerHTML = html; }
+async function openProtocol() {
+  blurText(); closePops();
+  clearTimeout(_saveT); saveData();
+  const modal = document.getElementById('pdf-modal');
+  modal.classList.add('open');
+  document.getElementById('pdf-foot').style.display = 'none';
+  pdfModalSet(`<div class="pdf-progress"><div class="parsing-spinner" id="pdf-status">Protokoll wird erstellt …</div>
+    <div class="pdf-bar"><div id="pdf-bar-fill"></div></div></div>`);
+  try {
+    const pages = await renderProtocolPages((i, n, k, steps) => {
+      const st = document.getElementById('pdf-status'), bar = document.getElementById('pdf-bar-fill');
+      if (st) st.textContent = `Folie ${i + 1} von ${n}${steps > 1 ? ` (Seite ${k + 1}/${steps})` : ''} wird aufbereitet …`;
+      if (bar) bar.style.width = Math.round(((i + (k + 1) / steps) / n) * 100) + '%';
+    });
+    const title = `Protokoll Clubmeeting – ${protocolDateLabel()}`;
+    const blob = buildPdf(pages, title);
+    const name = protocolFileName();
+    let file = null;
+    try { file = new File([blob], name, { type: 'application/pdf' }); } catch (e) {}
+    _pdfResult = { blob, file, name, pages: pages.length };
+    const canShare = !!(file && navigator.canShare && navigator.canShare({ files: [file] }));
+    const thumbs = document.createElement('div'); thumbs.className = 'pdf-thumbs';
+    pages.forEach((p, i) => {
+      const c = document.createElement('canvas'); c.width = 192; c.height = 108;
+      c.getContext('2d').drawImage(p.thumb, 0, 0, 192, 108);
+      c.title = 'Seite ' + (i + 1);
+      thumbs.appendChild(c);
+    });
+    pdfModalSet(`
+      <div class="pdf-done">✓ <b>${name}</b> · ${pages.length} Seiten · ${(blob.size / 1048576).toFixed(1).replace('.', ',')} MB</div>
+      <div id="pdf-thumb-slot"></div>
+      <label class="pdf-field">An (optional)<input type="email" id="pdf-to" placeholder="z. B. vorstand@…" autocomplete="email" value="${escAttr(data.protocolTo || '')}"/></label>
+      <div class="pdf-hint">${canShare
+        ? '„Per Mail senden“ öffnet das Teilen-Menü – dort <b>Mail</b> wählen, die PDF ist bereits angehängt.'
+        : 'Dieser Browser kann Dateien nicht direkt an Mail übergeben: Die PDF wird heruntergeladen und eine neue E-Mail geöffnet – bitte die PDF aus „Downloads“ anhängen.'}</div>`);
+    document.getElementById('pdf-thumb-slot').appendChild(thumbs);
+    document.getElementById('pdf-share').style.display = canShare ? '' : 'none';
+    const mailBtn = document.getElementById('pdf-mail');
+    mailBtn.textContent = canShare ? 'E-Mail ohne Anhang' : '✉︎ Herunterladen & E-Mail öffnen';
+    mailBtn.className = 'modal-btn ' + (canShare ? 'secondary' : 'primary');
+    document.getElementById('pdf-foot').style.display = '';
+  } catch (err) {
+    pdfModalSet(`<p class="pdf-err">⚠ Das Protokoll konnte nicht erstellt werden.</p>
+      <p class="pdf-hint">${err && err.message === 'load'
+        ? 'Für die PDF-Erstellung wird einmalig eine Internetverbindung benötigt. Bitte Verbindung prüfen und erneut versuchen.'
+        : 'Fehler: ' + escAttr(err && err.message || err)}</p>`);
+  }
+}
+function closeProtocol() { document.getElementById('pdf-modal').classList.remove('open'); }
+function protocolMailText() {
+  return `Hallo zusammen,\n\nanbei das Protokoll unseres Clubmeetings vom ${protocolDateLabel()}.\n\nViele Grüße\nRotary Club Riesa-Elbland`;
+}
+function rememberRecipient() {
+  const to = (document.getElementById('pdf-to')?.value || '').trim();
+  if (to !== (data.protocolTo || '')) { data.protocolTo = to; scheduleSave(); }
+  return to;
+}
+function downloadProtocol() {
+  if (!_pdfResult) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(_pdfResult.blob);
+  a.download = _pdfResult.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  toast('PDF gespeichert ✓');
+}
+async function shareProtocol() {
+  if (!_pdfResult || !_pdfResult.file) return;
+  rememberRecipient();
+  try {
+    await navigator.share({ files: [_pdfResult.file], title: `Protokoll Clubmeeting – ${protocolDateLabel()}`, text: protocolMailText() });
+  } catch (e) {
+    if (e && e.name !== 'AbortError') { toast('Teilen nicht möglich – PDF wird heruntergeladen'); downloadProtocol(); }
+  }
+}
+function mailProtocol() {
+  if (!_pdfResult) return;
+  const to = rememberRecipient();
+  const canShare = !!(_pdfResult.file && navigator.canShare && navigator.canShare({ files: [_pdfResult.file] }));
+  if (!canShare) downloadProtocol();
+  const subject = `Protokoll Clubmeeting – ${protocolDateLabel()}`;
+  const body = protocolMailText() + (canShare ? '' : `\n\n(Anhang: ${_pdfResult.name})`);
+  setTimeout(() => {
+    location.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }, canShare ? 0 : 400);
+}
+
+// ══════════════════════════════════════════════════════════════
 //  UTILS
 // ══════════════════════════════════════════════════════════════
 function toggleFullscreen() {
@@ -3462,7 +3747,7 @@ function poke() {
   document.body.classList.remove('idle');
   clearTimeout(_idleT);
   _idleT = setTimeout(() => {
-    if (!editMode && !document.getElementById('import-modal').classList.contains('open')) document.body.classList.add('idle');
+    if (!editMode && !document.querySelector('#import-modal.open, #pdf-modal.open')) document.body.classList.add('idle');
   }, 2600);
 }
 ['pointermove', 'pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, poke, { passive: true }));
@@ -3499,7 +3784,7 @@ document.addEventListener('pointercancel', onPointerUp);
 document.addEventListener('pointerdown', e => {
   // click outside the slide (grey workspace) → deselect, like PowerPoint
   if (!editMode || !sel) return;
-  if (e.target.closest('#slides, #topbar, .rb-pop, #import-modal, .nav-btn')) return;
+  if (e.target.closest('#slides, #topbar, .rb-pop, #import-modal, #pdf-modal, .nav-btn')) return;
   blurText(); selectObj(null);
 });
 
