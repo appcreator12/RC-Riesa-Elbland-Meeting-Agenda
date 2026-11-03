@@ -2622,7 +2622,9 @@ function normalizeLists(box) {
     if (isList(prev) && prev.querySelector(':scope > li')) {     // indented lines → sub-level of the list above
       while (w.firstChild) prev.appendChild(w.firstChild);
       w.remove();
-    } else if (!(prev && prev.nodeType === 1 && prev.tagName === 'LI')) unwrap(w);   // nothing to indent under
+    } else if (!prev && w.parentElement === box && [...w.children].every(c => c.tagName !== w.tagName)) {
+      unwrap(w);   // a numbered list wrapped in a bullet list (or vice versa) at the very top: nothing to indent under
+    }              // otherwise the indent is intended (Tab) and stays
   });
   st.forEach(e => { e.style.removeProperty('margin-left'); e.style.removeProperty('text-indent');
                     if (e.tagName === 'LI') e.style.removeProperty('padding-left'); });
@@ -2666,14 +2668,13 @@ function refreshMarkers(box) {
   const levels = new Map();
   box.querySelectorAll('ol, ul').forEach(list => {
     const items = [...list.children].filter(c => c.tagName === 'LI');
-    if (!items.length) return;
     let depth = 0;
     for (let p = list.parentElement; p && p !== box; p = p.parentElement) if (p.tagName === 'OL' || p.tagName === 'UL') depth++;
     const g = levels.get(depth) || { lists: [], widest: 0, gapRef: 0, base: 0, ol: false };
     levels.set(depth, g);
     const base = parseFloat(getComputedStyle(list).fontSize) || 32;
     g.lists.push([list, items]); g.base = Math.max(g.base, base); g.gapRef = Math.max(g.gapRef, base);
-    if (list.tagName === 'OL') g.ol = true;
+    if (list.tagName === 'OL' && items.length) g.ol = true;
     items.forEach(li => {
       const st = li.style;
       const size = st.getPropertyValue('--mk-s') || base + 'px';
@@ -2708,7 +2709,8 @@ function listStart(ol) {
     if (n.nodeType === 3) { if (n.textContent.replace(/\u200B/g, '').trim()) return 1; continue; }
     if (n.nodeType !== 1) continue;
     if (n.tagName === 'OL') return lastNumber(n) + 1;
-    if (n.tagName === 'UL') continue;
+    if (n.tagName === 'UL' || n.tagName === 'BR') continue;
+    if (!n.textContent.replace(/\u200B/g, '').trim() && !n.querySelector('img')) continue;   // empty line
     return 1;
   }
   return 1;
