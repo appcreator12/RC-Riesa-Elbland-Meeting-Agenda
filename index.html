@@ -427,7 +427,9 @@ body.edit-mode .canvas {
 .tb-content li::before {
   content: attr(data-n);
   display: inline-block; box-sizing: border-box;
-  width: 3em; margin-left: -3em; padding-right: .35em; text-align: right;   /* sits on the same baseline as the text */
+  /* hanging indent: all numbers start at the same left edge, text at the same indent */
+  width: var(--mk-wd, 1.7em); margin-left: calc(-1 * var(--mk-wd, 1.7em));
+  padding-right: .3em; text-align: left; font-variant-numeric: tabular-nums;
   white-space: nowrap; pointer-events: none;
   font-weight: var(--mk-w, inherit); font-style: var(--mk-i, inherit);
   text-decoration: var(--mk-d, none); color: var(--mk-c, inherit);
@@ -2558,7 +2560,10 @@ function fmtToggle(cmd) { withText(() => document.execCommand(cmd, false, null),
 function fmtBlock(cmd) {
   withText(t => {
     // Numbering button on a numbered line → remove its number, keep the rest of the list counting on
-    if (cmd === 'insertOrderedList' && t.mode === 'range' && unnumberItem(t.box)) return;
+    if (cmd === 'insertOrderedList' && t.mode === 'range') {
+      const li = listItemAt(getSelection().anchorNode, t.box);
+      if (li && li.parentElement.tagName === 'OL' && unnumberItem(t.box)) return;
+    }
     document.execCommand(cmd, false, null);
   });
 }
@@ -2593,8 +2598,42 @@ function firstTextIn(li) {
       ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP });
   return tw.nextNode();
 }
+// Repairs list structures the browsers' editing commands leave behind, which shift whole items:
+// lists wrapped in an indent block (<blockquote>), "wrapper" lists without own items
+// (Tab on the first line) and inline indents. Caret position is kept.
+function normalizeLists(box) {
+  const isList = e => e && e.nodeType === 1 && (e.tagName === 'OL' || e.tagName === 'UL');
+  const bq = [...box.querySelectorAll('blockquote')].filter(b => b.querySelector('ol, ul'));
+  const wr = [...box.querySelectorAll('ol, ul')].filter(l => l.children.length && [...l.children].every(isList));
+  const st = [...box.querySelectorAll('ol, ul, li')].filter(e => e.style.marginLeft || e.style.textIndent || (e.tagName === 'LI' && e.style.paddingLeft));
+  // stray spaces at the start of a list line push its text off the common indent (not while typing there)
+  if (document.activeElement !== box) box.querySelectorAll('li').forEach(li => {
+    const tn = firstTextIn(li);
+    if (tn && /^[ \u00A0]+/.test(tn.textContent)) tn.textContent = tn.textContent.replace(/^[ \u00A0]+/, '');
+  });
+  if (!bq.length && !wr.length && !st.length) return false;
+  const s = getSelection();
+  const keep = s.rangeCount && box.contains(s.anchorNode) ? [s.anchorNode, s.anchorOffset, s.focusNode, s.focusOffset] : null;
+  bq.forEach(b => { if (b.isConnected) unwrap(b); });
+  wr.forEach(w => {
+    if (!w.isConnected || ![...w.children].every(isList)) return;
+    let prev = w.previousSibling;
+    while (prev && prev.nodeType === 3 && !prev.textContent.replace(/\u200B/g, '').trim()) prev = prev.previousSibling;
+    if (isList(prev) && prev.querySelector(':scope > li')) {     // indented lines → sub-level of the list above
+      while (w.firstChild) prev.appendChild(w.firstChild);
+      w.remove();
+    } else if (!(prev && prev.nodeType === 1 && prev.tagName === 'LI')) unwrap(w);   // nothing to indent under
+  });
+  st.forEach(e => { e.style.removeProperty('margin-left'); e.style.removeProperty('text-indent');
+                    if (e.tagName === 'LI') e.style.removeProperty('padding-left'); });
+  if (keep && keep[0].isConnected && keep[2].isConnected) {
+    try { s.setBaseAndExtent(keep[0], keep[1], keep[2], keep[3]); } catch (e) {}
+  }
+  return true;
+}
 function refreshMarkers(box) {
   if (!box || !box.querySelector('li')) return;
+  normalizeLists(box);
   const boxColor = getComputedStyle(box).color;
   box.querySelectorAll('li').forEach(li => {
     const list = li.parentElement;
@@ -2621,6 +2660,38 @@ function refreshMarkers(box) {
     });
     if (!li.getAttribute('style')) li.removeAttribute('style');
   });
+  // one common indent per list level for the whole text box: numbers and bullets of the same
+  // level start at one left edge and their text at one indent, wide enough for "10." or "viii."
+  const ctx = (refreshMarkers._ctx = refreshMarkers._ctx || document.createElement('canvas').getContext('2d'));
+  const levels = new Map();
+  box.querySelectorAll('ol, ul').forEach(list => {
+    const items = [...list.children].filter(c => c.tagName === 'LI');
+    if (!items.length) return;
+    let depth = 0;
+    for (let p = list.parentElement; p && p !== box; p = p.parentElement) if (p.tagName === 'OL' || p.tagName === 'UL') depth++;
+    const g = levels.get(depth) || { lists: [], widest: 0, gapRef: 0, base: 0, ol: false };
+    levels.set(depth, g);
+    const base = parseFloat(getComputedStyle(list).fontSize) || 32;
+    g.lists.push([list, items]); g.base = Math.max(g.base, base); g.gapRef = Math.max(g.gapRef, base);
+    if (list.tagName === 'OL') g.ol = true;
+    items.forEach(li => {
+      const st = li.style;
+      const size = st.getPropertyValue('--mk-s') || base + 'px';
+      ctx.font = `${st.getPropertyValue('--mk-i') || 'normal'} ${st.getPropertyValue('--mk-w') || 400} ${size} ${st.getPropertyValue('--mk-f') || 'DM Sans, sans-serif'}`;
+      try { ctx.fontVariantNumeric = 'tabular-nums'; } catch (e) {}
+      g.widest = Math.max(g.widest, ctx.measureText(li.getAttribute('data-n') || '').width);
+      g.gapRef = Math.max(g.gapRef, parseFloat(size) || base);
+    });
+  });
+  levels.forEach(g => {
+    const minPad = (g.ol ? 1.7 : 1.2) * g.base;
+    const pad = Math.round(Math.max(minPad, g.widest + 0.45 * g.gapRef) * 10) / 10;
+    const v = pad + 'px';
+    g.lists.forEach(([list, items]) => {
+      if (Math.abs((parseFloat(list.style.paddingLeft) || 0) - pad) > 0.5) list.style.paddingLeft = v;
+      items.forEach(li => { if (li.style.getPropertyValue('--mk-wd') !== v) li.style.setProperty('--mk-wd', v); });
+    });
+  });
 }
 
 // ── NUMBERED LISTS (PowerPoint/Word-like control over the numbers) ──
@@ -2629,9 +2700,22 @@ function listItemAt(node, box) {
   const li = el && el.closest ? el.closest('li') : null;
   return li && box.contains(li) ? li : null;
 }
+// A numbered list without an explicit start continues the numbered list above it when only
+// bullet lists lie in between (1. · • · • · 2.), like PowerPoint. An explicit start="1" restarts.
+function listStart(ol) {
+  if (ol.hasAttribute('start')) return parseInt(ol.getAttribute('start'), 10) || 1;
+  for (let n = ol.previousSibling, guard = 0; n && guard < 60; n = n.previousSibling, guard++) {
+    if (n.nodeType === 3) { if (n.textContent.replace(/\u200B/g, '').trim()) return 1; continue; }
+    if (n.nodeType !== 1) continue;
+    if (n.tagName === 'OL') return lastNumber(n) + 1;
+    if (n.tagName === 'UL') continue;
+    return 1;
+  }
+  return 1;
+}
 function itemNumber(li) {
   const ol = li.parentElement;
-  let n = ol.hasAttribute('start') ? parseInt(ol.getAttribute('start'), 10) || 1 : 1;
+  let n = listStart(ol);
   for (const c of ol.children) {
     if (c.tagName !== 'LI') continue;
     if (c.hasAttribute('value')) n = parseInt(c.getAttribute('value'), 10) || 1;
@@ -2642,7 +2726,7 @@ function itemNumber(li) {
 }
 function lastNumber(ol) {
   const items = [...ol.children].filter(c => c.tagName === 'LI');
-  return items.length ? itemNumber(items[items.length - 1]) : (parseInt(ol.getAttribute('start'), 10) || 1) - 1;
+  return items.length ? itemNumber(items[items.length - 1]) : listStart(ol) - 1;
 }
 function prevList(ol) {
   let n = ol.previousSibling;
@@ -2704,7 +2788,7 @@ function setListFormat(fmt) {
 function setListStart(n) {
   withText(t => {
     const c = ensureNumbered(t.box);
-    c.all.forEach(ol => { if (n === 1) ol.removeAttribute('start'); else ol.setAttribute('start', n); });
+    c.all.forEach(ol => ol.setAttribute('start', n));
   });
   fillNumberPop();
 }
@@ -2715,7 +2799,7 @@ function setItemNumber(n) {
     const c = numberCtx(tt.box);
     if (!c.li) { toast('Bitte den Cursor in einen nummerierten Punkt setzen'); return; }
     const first = c.ol.querySelector(':scope > li');
-    if (c.li === first) { if (n === 1) c.ol.removeAttribute('start'); else c.ol.setAttribute('start', n); c.li.removeAttribute('value'); }
+    if (c.li === first) { c.ol.setAttribute('start', n); c.li.removeAttribute('value'); }
     else c.li.setAttribute('value', n);
   });
   fillNumberPop();
@@ -2727,7 +2811,7 @@ function listAction(act) {
     if (act === 'remove') { unnumberItem(t.box); return; }
     if (act === 'restart') {
       if (c.li && c.li !== c.ol.querySelector(':scope > li')) c.li.setAttribute('value', 1);
-      else { c.ol.removeAttribute('start'); c.ol.querySelector(':scope > li')?.removeAttribute('value'); }
+      else { c.ol.setAttribute('start', 1); c.ol.querySelector(':scope > li')?.removeAttribute('value'); }
       return;
     }
     if (act === 'continue') {
@@ -3584,7 +3668,7 @@ function prepCloneForSlide(doc, idx, origSlide, contLabel) {
     const cs = getComputedStyle(o, '::before');
     const mk = doc.createElement('span');
     mk.textContent = o.getAttribute('data-n') || '';
-    mk.style.cssText = `display:inline-block;box-sizing:border-box;width:3em;margin-left:-3em;padding-right:.35em;text-align:right;white-space:nowrap;
+    mk.style.cssText = `display:inline-block;box-sizing:border-box;width:${cs.width};margin-left:${cs.marginLeft};padding-right:${cs.paddingRight};text-align:left;font-variant-numeric:tabular-nums;white-space:nowrap;
       font-weight:${cs.fontWeight};font-style:${cs.fontStyle};text-decoration:${cs.textDecorationLine};color:${cs.color};font-size:${cs.fontSize};font-family:${cs.fontFamily}`;
     li.insertBefore(mk, li.firstChild);
   });
