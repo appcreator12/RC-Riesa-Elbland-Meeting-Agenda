@@ -1460,6 +1460,11 @@ function extractBirthdays(text) {
   return results.sort((a,b) => a.month !== b.month ? a.month-b.month : a.day-b.day);
 }
 
+// two-digit years: "58" → 1958, "05" → 2005 (never a year in the future)
+function fullYear(yy) {
+  const y = 2000 + yy;
+  return y > new Date().getFullYear() ? y - 100 : y;
+}
 // ── DATE STRING PARSER ───────────────────────────────────────
 // Supports: DD.MM.YYYY, DD/MM/YYYY, YYYY-MM-DD, DD. Monat YYYY, DD. Monat
 function parseDate(str) {
@@ -1468,7 +1473,7 @@ function parseDate(str) {
   let m;
   // DD.MM.YYYY or DD.MM.YY
   if ((m = str.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})$/)))
-    return { day:+m[1], month:+m[2], year: m[3].length===2 ? 2000+parseInt(m[3]) : +m[3] };
+    return { day:+m[1], month:+m[2], year: m[3].length===2 ? fullYear(+m[3]) : +m[3] };
   // YYYY-MM-DD
   if ((m = str.match(/^(\d{4})-(\d{2})-(\d{2})$/)))
     return { day:+m[3], month:+m[2], year:+m[1] };
@@ -1860,10 +1865,12 @@ function closeModal() {
 function daysUntilBirthday(day, month) {
   const today = new Date(); today.setHours(0,0,0,0);
   const yr = today.getFullYear();
-  let bday = new Date(yr, month-1, day);
-  let diff = Math.round((bday - today) / 86400000);
-  if (diff < -28) { bday = new Date(yr+1, month-1, day); diff = Math.round((bday - today) / 86400000); }
-  return diff;
+  // earliest birthday that is at most 4 weeks ago — also across New Year (20 Dec seen on 5 Jan)
+  for (const y of [yr - 1, yr, yr + 1]) {
+    const diff = Math.round((new Date(y, month-1, day) - today) / 86400000);
+    if (diff >= -28) return diff;
+  }
+  return 0;
 }
 
 // ── BIRTHDAY DISPLAY (4 weeks past / 2 weeks future window, with photos) ──
@@ -1906,7 +1913,13 @@ function renderBirthdays(list) {
   const upcoming = windowed.filter(b => b.diff > 0);
 
   function bdayCard(b, cls = '') {
-    const age      = b.year ? now.getFullYear() - b.year + (b.diff > 0 ? 1 : 0) : 0;
+    // age on the birthday shown: year of that birthday (this year, or next/last year around New Year) − birth year
+    const today0   = new Date(); today0.setHours(0, 0, 0, 0);
+    const occYear  = new Date(today0.getTime() + b.diff * 86400000 + 43200000).getFullYear();
+    let   by       = +b.year || 0;
+    if (by > 0 && by < 100) by = fullYear(by);
+    if (by > occYear) by -= 100;                    // older imports stored "58" as 2058
+    const age      = by ? occYear - by : 0;
     const avatar   = b.photo
       ? `<img src="${b.photo}" class="bday-avatar bday-photo" alt="${b.name}"/>`
       : `<div class="bday-avatar">${b.initials || b.name.split(' ').map(n=>n[0]).slice(0,2).join('').toUpperCase()}</div>`;
