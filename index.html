@@ -3654,7 +3654,7 @@ function canvasToJpeg(canvas, q = 0.88) {
 }
 
 // Prepare the off-screen copy html2canvas renders: presentation look, one slide, real list markers
-function prepCloneForSlide(doc, idx, origSlide, contLabel) {
+function prepCloneForSlide(doc, idx, origSlide, contLabel, cuts) {
   doc.body.classList.remove('edit-mode', 'idle');
   const st = doc.createElement('style');
   st.textContent = `
@@ -3687,10 +3687,77 @@ function prepCloneForSlide(doc, idx, origSlide, contLabel) {
       font-weight:${cs.fontWeight};font-style:${cs.fontStyle};text-decoration:${cs.textDecorationLine};color:${cs.color};font-size:${cs.fontSize};font-family:${cs.fontFamily}`;
     li.insertBefore(mk, li.firstChild);
   });
+  // long content: show exactly this page's slice of every scrolling box (no repeats, no cut lines)
+  if (cuts) {
+    const conts = sl.querySelectorAll('.tb-content, .data-list');
+    cuts.forEach((c, n) => {
+      const box = conts[n]; if (!box) return;
+      const ocs = getComputedStyle(c.el);
+      const clip = doc.createElement('div'), inner = doc.createElement('div');
+      clip.style.cssText = `overflow:hidden;height:${Math.max(0, c.h)}px;flex:none;position:relative;`;
+      inner.style.cssText = `margin-top:${-c.y}px;display:${ocs.display === 'flex' ? 'flex' : 'block'};flex-direction:${ocs.flexDirection};gap:${ocs.rowGap};`;
+      [...box.childNodes].forEach(ch => {
+        if (ch.nodeType === 1 && doc.defaultView.getComputedStyle(ch).position === 'absolute') return;   // watermark stays
+        inner.appendChild(ch);
+      });
+      clip.appendChild(inner);
+      box.insertBefore(clip, box.firstChild);
+      box.style.setProperty('overflow', 'hidden', 'important');
+      box.scrollTop = 0;
+    });
+  }
   if (contLabel) {
     const pg = sl.querySelector('.slide-footer .pg');
     if (pg) pg.textContent = pg.textContent + ' · ' + contLabel;
   }
+}
+
+// Splits a scrolling box into PDF pages at whole lines (text boxes) or whole entries (lists).
+// Returns [{y, h}] in unscaled px from the content top: page shows y … y+h. Trailing empty
+// lines never create an extra page.
+function protocolPagePlan(box) {
+  const r0 = box.getBoundingClientRect();
+  const sc = box.offsetHeight ? r0.height / box.offsetHeight : 1;
+  const cs = getComputedStyle(box);
+  const padT = parseFloat(cs.paddingTop) || 0, padB = parseFloat(cs.paddingBottom) || 0;
+  const avail = box.clientHeight - padT - padB;
+  const top0 = r0.top + box.clientTop * sc + padT * sc;
+  const rects = [];
+  const add = r => { if (r.height > 0.5 && r.width > 0.5) rects.push([(r.top - top0) / sc + box.scrollTop, (r.bottom - top0) / sc + box.scrollTop]); };
+  if (box.classList.contains('tb-content')) {
+    const tw = document.createTreeWalker(box, NodeFilter.SHOW_TEXT);
+    const rg = document.createRange();
+    for (let n; (n = tw.nextNode());) {
+      if (!n.textContent.replace(/[\s\u200B]/g, '')) continue;
+      rg.selectNodeContents(n);
+      [...rg.getClientRects()].forEach(add);
+    }
+    box.querySelectorAll('img').forEach(im => add(im.getBoundingClientRect()));
+  } else {
+    [...box.children].forEach(ch => { if (getComputedStyle(ch).position !== 'absolute') add(ch.getBoundingClientRect()); });
+  }
+  if (!rects.length) return [{ y: 0, h: avail }];
+  // rows: overlapping rects form one line
+  rects.sort((a, b) => a[0] - b[0]);
+  const rows = [];
+  rects.forEach(([t, b]) => {
+    const last = rows[rows.length - 1];
+    if (last && t < last[1] - 1) last[1] = Math.max(last[1], b); else rows.push([t, b]);
+  });
+  const lastBottom = rows[rows.length - 1][1];
+  if (lastBottom <= avail + 1) return [{ y: 0, h: avail }];          // fits: one page as on screen
+  const plan = [];
+  let y = 0;
+  while (plan.length < 12) {
+    const limit = y + avail;
+    const j = rows.findIndex(r => r[1] > limit + 0.5);
+    if (j < 0) { plan.push({ y, h: avail }); break; }
+    let next = rows[j][0] - 2;                                          // start the next page just above that line
+    if (next <= y + 4) next = limit;                                    // a single line taller than the page
+    plan.push({ y, h: next - y });
+    y = next;
+  }
+  return plan;
 }
 
 async function renderProtocolPages(onProgress) {
@@ -3713,24 +3780,21 @@ async function renderProtocolPagesInner(onProgress) {
   const scrolled = [];
   for (let i = 0; i < slides.length; i++) {
     const slide = slides[i];
-    slide.querySelectorAll('.data-list').forEach(l => { scrolled.push([l, l.scrollTop]); l.scrollTop = 0; });
-    const boxes = [...slide.querySelectorAll('.tb-content')];
-    boxes.forEach(b => scrolled.push([b, b.scrollTop]));
-    // how many pages does the longest text box need?
-    let steps = 1;
-    const stepOf = b => Math.max(40, b.clientHeight - parseFloat(getComputedStyle(b).fontSize) * 1.3);
-    boxes.forEach(b => {
-      const over = b.scrollHeight - b.clientHeight;
-      if (over > 4) steps = Math.max(steps, 1 + Math.ceil(over / stepOf(b)));
-    });
-    steps = Math.min(steps, 12);
+    const conts = [...slide.querySelectorAll('.tb-content, .data-list')];
+    conts.forEach(b => { scrolled.push([b, b.scrollTop]); b.scrollTop = 0; });
+    const plans = conts.map(protocolPagePlan);
+    const steps = Math.min(12, Math.max(1, ...plans.map(p => p.length)));
     for (let k = 0; k < steps; k++) {
-      boxes.forEach(b => { b.scrollTop = Math.min(k * stepOf(b), b.scrollHeight - b.clientHeight); });
       onProgress && onProgress(i, slides.length, k, steps);
+      // one slice per box and page; a box that has ended stays empty on later pages
+      const cuts = steps > 1 ? plans.map((p, n) => {
+        const c = p[k] || { y: 0, h: 0 };
+        return { el: conts[n], y: c.y, h: c.h };
+      }) : null;
       const canvas = await window.html2canvas(slide, {
         scale: 1.5, width: STAGE_W, height: STAGE_H, windowWidth: STAGE_W, windowHeight: STAGE_H,
         backgroundColor: '#ffffff', logging: false, useCORS: true, imageTimeout: 15000,
-        onclone: doc => prepCloneForSlide(doc, i, slide, k > 0 ? `Fortsetzung ${k + 1}/${steps}` : (steps > 1 ? `Teil 1/${steps}` : '')),
+        onclone: doc => prepCloneForSlide(doc, i, slide, k > 0 ? `Fortsetzung ${k + 1}/${steps}` : (steps > 1 ? `Teil 1/${steps}` : ''), cuts),
       });
       pages.push({ bytes: await canvasToJpeg(canvas), w: canvas.width, h: canvas.height, thumb: canvas });
     }
