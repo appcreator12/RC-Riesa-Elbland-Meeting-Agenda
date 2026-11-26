@@ -628,6 +628,17 @@ body.capturing .title-img-bottom .img-blur { display: none !important; }
 .pdf-field input:focus { border-color: var(--gold); }
 .pdf-hint { font-size: 12px; line-height: 1.5; color: var(--muted); }
 .pdf-err { font-size: 14px; color: #c0392b; font-weight: 600; }
+.pdf-pick-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+.pdf-pick-head button { background: none; border: none; color: var(--blue); font: 600 13px 'DM Sans', sans-serif; cursor: pointer; padding: 4px 6px; border-radius: 6px; }
+.pdf-pick-head button:hover { background: var(--light); }
+.pdf-pick { display: flex; flex-direction: column; gap: 6px; max-height: 340px; overflow-y: auto; padding: 2px; }
+.pdf-pick label { display: flex; align-items: center; gap: 12px; padding: 9px 12px; border: 1px solid #D5DEEB; border-radius: 10px; cursor: pointer; font-size: 14px; color: var(--text); user-select: none; transition: background .15s, border-color .15s; }
+.pdf-pick label:has(input:checked) { border-color: var(--gold); background: #FFF8EA; }
+.pdf-pick input { width: 18px; height: 18px; accent-color: var(--blue); flex: none; margin: 0; }
+.pdf-pick .pk-num { font: 700 12px 'DM Sans', sans-serif; color: #fff; background: var(--blue); border-radius: 6px; min-width: 28px; height: 22px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.pdf-pick .pk-title { flex: 1; min-width: 0; font-weight: 600; }
+.pdf-pick .pk-empty { font-size: 11px; color: var(--muted); background: var(--light); border-radius: 999px; padding: 2px 8px; flex: none; }
+.pdf-again { background: none; border: none; color: var(--blue); font: 600 13px 'DM Sans', sans-serif; cursor: pointer; padding: 0; text-decoration: underline; }
 
 #import-modal {
   position: fixed; inset: 0; z-index: 300;
@@ -876,7 +887,7 @@ body.capturing .title-img-bottom .img-blur { display: none !important; }
     <button class="tb-btn" onclick="toggleFullscreen()" title="Vollbild (F)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
     </button>
-    <button class="tb-btn" id="btn-protocol" onclick="openProtocol()" title="Alle Folien als Protokoll (PDF) speichern und per Mail senden">
+    <button class="tb-btn" id="btn-protocol" onclick="openProtocol()" title="Folien als Protokoll (PDF) speichern und per Mail senden">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
       <span class="tb-label-opt">Protokoll</span>
     </button>
@@ -943,6 +954,10 @@ body.capturing .title-img-bottom .img-blur { display: none !important; }
       <button class="modal-close" onclick="closeProtocol()">✕</button>
     </div>
     <div class="modal-body" id="pdf-body"></div>
+    <div class="modal-foot" id="pdf-pick-foot" style="display:none">
+      <button class="modal-btn secondary" onclick="closeProtocol()">Abbrechen</button>
+      <button class="modal-btn primary" id="pdf-go" onclick="createProtocol()">Protokoll erstellen</button>
+    </div>
     <div class="modal-foot" id="pdf-foot" style="display:none">
       <button class="modal-btn secondary" onclick="downloadProtocol()">PDF speichern</button>
       <div style="display:flex;gap:8px">
@@ -3760,32 +3775,33 @@ function protocolPagePlan(box) {
   return plan;
 }
 
-async function renderProtocolPages(onProgress) {
+async function renderProtocolPages(onProgress, only) {
   await loadScriptOnce(H2C_URL);
   const wasEdit = document.body.classList.contains('edit-mode');
   document.body.classList.remove('edit-mode', 'idle');
   document.body.classList.add('capturing');
-  try { return await renderProtocolPagesInner(onProgress); }
+  try { return await renderProtocolPagesInner(onProgress, only); }
   finally {
     document.body.classList.remove('capturing');
     if (wasEdit) document.body.classList.add('edit-mode');
     fitStage();
   }
 }
-async function renderProtocolPagesInner(onProgress) {
+async function renderProtocolPagesInner(onProgress, only) {
   try { await Promise.all([...document.fonts].map(f => f.load().catch(() => {}))); await document.fonts.ready; } catch (e) {}
   const pill = document.querySelector('.title-date-pill'); if (pill) pill.textContent = todayLabel();
   const slides = [...document.querySelectorAll('#slides .slide')];
+  const pick = (only && only.length ? only : slides.map((_, n) => n)).filter(n => slides[n]);
   const pages = [];
   const scrolled = [];
-  for (let i = 0; i < slides.length; i++) {
-    const slide = slides[i];
+  for (let q = 0; q < pick.length; q++) {
+    const i = pick[q], slide = slides[i];
     const conts = [...slide.querySelectorAll('.tb-content, .data-list')];
     conts.forEach(b => { scrolled.push([b, b.scrollTop]); b.scrollTop = 0; });
     const plans = conts.map(protocolPagePlan);
     const steps = Math.min(12, Math.max(1, ...plans.map(p => p.length)));
     for (let k = 0; k < steps; k++) {
-      onProgress && onProgress(i, slides.length, k, steps);
+      onProgress && onProgress(q, pick.length, k, steps);
       // one slice per box and page; a box that has ended stays empty on later pages
       const cuts = steps > 1 ? plans.map((p, n) => {
         const c = p[k] || { y: 0, h: 0 };
@@ -3804,12 +3820,56 @@ async function renderProtocolPagesInner(onProgress) {
 }
 
 function pdfModalSet(html) { document.getElementById('pdf-body').innerHTML = html; }
-async function openProtocol() {
+
+// ── step 1: choose the slides for the protocol (choice is remembered) ──
+function protocolSlideList() {
+  const list = [{ key: 'title', num: '', title: 'Titelfolie', empty: false },
+                { key: 'agenda', num: '', title: 'Agenda', empty: false }];
+  AGENDA.forEach(a => {
+    let empty;
+    if (a.type === 'birthdays') empty = !(data.birthdays && data.birthdays.length);
+    else if (a.type === 'events') empty = !(data.events && data.events.length);
+    else empty = !slideObjs(a.id).some(o => o.type === 'image' ||
+      (o.type === 'text' && (o.html || '').replace(/<[^>]*>/g, '').replace(/&nbsp;|\s|\u200B/g, '')));
+    list.push({ key: a.id, num: a.num, title: a.title, empty });
+  });
+  return list;
+}
+function openProtocol() {
   blurText(); closePops();
   clearTimeout(_saveT); saveData();
-  const modal = document.getElementById('pdf-modal');
-  modal.classList.add('open');
+  document.getElementById('pdf-modal').classList.add('open');
   document.getElementById('pdf-foot').style.display = 'none';
+  const skip = new Set(Array.isArray(data.protocolSkip) ? data.protocolSkip : []);
+  const rows = protocolSlideList().map((sl, n) => `
+    <label><input type="checkbox" data-n="${n}" data-key="${escAttr(sl.key)}" ${skip.has(sl.key) ? '' : 'checked'} onchange="protocolPickCount()"/>
+      <span class="pk-num" ${sl.num ? '' : 'style="background:var(--gold)"'}>${sl.num || (n === 0 ? '▣' : '☰')}</span>
+      <span class="pk-title">${escAttr(sl.title)}</span>${sl.empty ? '<span class="pk-empty">leer</span>' : ''}</label>`).join('');
+  pdfModalSet(`<div class="pdf-pick-head"><span>Welche Folien sollen ins Protokoll?</span>
+      <span><button onclick="protocolPickAll(true)">Alle</button><button onclick="protocolPickAll(false)">Keine</button></span></div>
+    <div class="pdf-pick" id="pdf-pick">${rows}</div>`);
+  document.getElementById('pdf-pick-foot').style.display = '';
+  protocolPickCount();
+}
+function protocolPickAll(on) {
+  document.querySelectorAll('#pdf-pick input').forEach(c => { c.checked = on; });
+  protocolPickCount();
+}
+function protocolPickCount() {
+  const n = document.querySelectorAll('#pdf-pick input:checked').length;
+  const go = document.getElementById('pdf-go');
+  go.disabled = !n; go.style.opacity = n ? '' : '.45';
+  go.textContent = n ? `Protokoll erstellen (${n} Folie${n === 1 ? '' : 'n'})` : 'Bitte Folien wählen';
+}
+
+// ── step 2: render the chosen slides ──
+async function createProtocol() {
+  const boxes = [...document.querySelectorAll('#pdf-pick input')];
+  const only = boxes.filter(c => c.checked).map(c => +c.dataset.n);
+  if (!only.length) return;
+  data.protocolSkip = boxes.filter(c => !c.checked).map(c => c.dataset.key);
+  scheduleSave();
+  document.getElementById('pdf-pick-foot').style.display = 'none';
   pdfModalSet(`<div class="pdf-progress"><div class="parsing-spinner" id="pdf-status">Protokoll wird erstellt …</div>
     <div class="pdf-bar"><div id="pdf-bar-fill"></div></div></div>`);
   try {
@@ -3817,7 +3877,7 @@ async function openProtocol() {
       const st = document.getElementById('pdf-status'), bar = document.getElementById('pdf-bar-fill');
       if (st) st.textContent = `Folie ${i + 1} von ${n}${steps > 1 ? ` (Seite ${k + 1}/${steps})` : ''} wird aufbereitet …`;
       if (bar) bar.style.width = Math.round(((i + (k + 1) / steps) / n) * 100) + '%';
-    });
+    }, only);
     const title = `Protokoll Clubmeeting – ${protocolDateLabel()}`;
     const blob = buildPdf(pages, title);
     const name = protocolFileName();
@@ -3833,7 +3893,8 @@ async function openProtocol() {
       thumbs.appendChild(c);
     });
     pdfModalSet(`
-      <div class="pdf-done">✓ <b>${name}</b> · ${pages.length} Seiten · ${(blob.size / 1048576).toFixed(1).replace('.', ',')} MB</div>
+      <div class="pdf-done">✓ <b>${name}</b> · ${only.length} Folie${only.length === 1 ? '' : 'n'} · ${pages.length} Seite${pages.length === 1 ? '' : 'n'} · ${(blob.size / 1048576).toFixed(1).replace('.', ',')} MB
+        · <button class="pdf-again" onclick="openProtocol()">Auswahl ändern</button></div>
       <div id="pdf-thumb-slot"></div>
       <label class="pdf-field">An (optional)<input type="email" id="pdf-to" placeholder="z. B. vorstand@…" autocomplete="email" value="${escAttr(data.protocolTo || '')}"/></label>
       <div class="pdf-hint">${canShare
@@ -3849,10 +3910,14 @@ async function openProtocol() {
     pdfModalSet(`<p class="pdf-err">⚠ Das Protokoll konnte nicht erstellt werden.</p>
       <p class="pdf-hint">${err && err.message === 'load'
         ? 'Für die PDF-Erstellung wird einmalig eine Internetverbindung benötigt. Bitte Verbindung prüfen und erneut versuchen.'
-        : 'Fehler: ' + escAttr(err && err.message || err)}</p>`);
+        : 'Fehler: ' + escAttr(err && err.message || err)}</p>
+      <p><button class="pdf-again" onclick="openProtocol()">Zurück zur Auswahl</button></p>`);
   }
 }
-function closeProtocol() { document.getElementById('pdf-modal').classList.remove('open'); }
+function closeProtocol() {
+  document.getElementById('pdf-modal').classList.remove('open');
+  document.getElementById('pdf-pick-foot').style.display = 'none';
+}
 function protocolMailText() {
   return `Hallo zusammen,\n\nanbei das Protokoll unseres Clubmeetings vom ${protocolDateLabel()}.\n\nViele Grüße\nRotary Club Riesa-Elbland`;
 }
